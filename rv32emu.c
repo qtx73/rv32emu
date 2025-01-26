@@ -138,9 +138,9 @@ void execute_instr(uint32_t instr) {
                     break;
             }
             break;
-        case 0x03 : // Load instructions
+        case 0x03 : {// Load instructions
+            uint32_t addr = reg[rs1] + imm_i;
             switch (funct3) {
-                uint32_t addr = reg[rs1] + imm_i;
                 case 0x0 : // LB
                     decoded_instr = INSTR_LB;
                     if (rd != 0)
@@ -173,9 +173,10 @@ void execute_instr(uint32_t instr) {
                     break;
             }
             break;
-        case 0x23 : // Store instructions
+        }
+        case 0x23 : {// Store instructions
+            uint32_t addr = reg[rs1] + imm_s;
             switch (funct3) {
-                uint32_t addr = reg[rs1] + imm_s;
                 case 0x0 : // SB
                     decoded_instr = INSTR_SB;
                     mem[addr] = reg[rs2] & 0xFF;
@@ -197,6 +198,7 @@ void execute_instr(uint32_t instr) {
                     break;
             }
             break;
+        }
         case 0x13 : // Immediate instructions
             switch (funct3) {
                 case 0x0 : // ADDI
