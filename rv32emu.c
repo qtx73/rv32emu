@@ -60,30 +60,30 @@ void execute_instr(uint32_t instr) {
     uint32_t funct3 = (instr >> 12) & 0x7;
     uint32_t funct7 = (instr >> 25) & 0x7F;
 
-    uint32_t imm_i = (int32_t) instr >> 20;
-    uint32_t imm_s = ((int32_t) ((instr >> 25) << 5)) | ((instr >> 7) & 0x1F);
-    uint32_t imm_b = ((int32_t) ((instr >> 31) << 12)) | ((instr >> 7) & 0x1) | ((instr >> 25) & 0x3E) | ((instr >> 8) & 0xF);
+    uint32_t imm_i = instr >> 20;
+    uint32_t imm_s = ((instr >> 25) << 5) | ((instr >> 7) & 0x1F);
+    uint32_t imm_b = ((instr >> 31) << 12) | ((instr >> 7) & 0x1) | ((instr >> 25) & 0x3E) | ((instr >> 8) & 0xF);
     uint32_t imm_u = instr & 0xFFFFF000;
-    uint32_t imm_j = ((int32_t) ((instr >> 31) << 20)) | ((instr >> 21) & 0x3FF) | ((instr >> 20) & 0x1) | ((instr >> 12) & 0xFF);
+    uint32_t imm_j = (((instr >> 31) & 0x01) << 20) | (((instr >> 21) & 0x3FF) << 1) | (((instr >> 20) & 0x1) << 11) | (((instr >> 12) & 0xFF) << 12);
 
     switch (opcode) {
         case 0x37 : // LUI (U-type)
             decoded_instr = INSTR_LUI;
             if (rd != 0)
-                reg[rd] = imm_u;
+                reg[rd] = (int32_t) imm_u;
             pc = pc + 4;
             break;
         case 0x17 : // AUIPC (U-type)
             decoded_instr = INSTR_AUIPC;
             if (rd != 0)
-                reg[rd] = pc + imm_u;
+                reg[rd] = pc + (int32_t) imm_u;
             pc = pc + 4;
             break;
         case 0x6F : // JAL (J-type)
             decoded_instr = INSTR_JAL;
             if (rd != 0)
                 reg[rd] = pc + 4;
-            pc = pc + imm_j;
+            pc = pc + (int32_t) imm_j;
             break;
         case 0x67 : // JALR (I-type)
             decoded_instr = INSTR_JALR;
@@ -472,13 +472,15 @@ int main(int argc, char **argv) {
     char buf[file_size];
     size_t size = fread(buf, 1, file_size, fp);
 
+    int MAX = 1000;
+    pc = 0;
     // print the content of the file in 32-bit hexadecimal
     // with address
-    for (int i = 0; i < size; i += 4) {
-        printf("%08x: ", i);
+    for (int i = 0; i < MAX; i += 4) {
+        printf("%08x: ", pc);
         uint32_t instr = 0;
         for (int j = 0; j < 4; j++) {
-            instr |= ((uint32_t)buf[i + j] << (j * 8)) & (0xFF << (j * 8));
+            instr |= ((uint32_t)buf[pc + j] << (j * 8)) & (0xFF << (j * 8));
         }
         printf("%08x\n", instr);
         execute_instr(instr);
