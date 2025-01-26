@@ -62,7 +62,7 @@ void execute_instr(uint32_t instr) {
 
     uint32_t imm_i = instr >> 20;
     uint32_t imm_s = ((instr >> 25) << 5) | ((instr >> 7) & 0x1F);
-    uint32_t imm_b = ((instr >> 31) << 12) | ((instr >> 7) & 0x1) | ((instr >> 25) & 0x3E) | ((instr >> 8) & 0xF);
+    uint32_t imm_b = ((instr >> 31) << 12) | (((instr >> 7) & 0x1) << 11) | (((instr >> 25) & 0x3E) << 5) | (((instr >> 8) & 0xF) << 1);
     uint32_t imm_u = instr & 0xFFFFF000;
     uint32_t imm_j = (((instr >> 31) & 0x01) << 20) | (((instr >> 21) & 0x3FF) << 1) | (((instr >> 20) & 0x1) << 11) | (((instr >> 12) & 0xFF) << 12);
 
