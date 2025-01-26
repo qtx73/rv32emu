@@ -43,7 +43,8 @@ typedef enum {
     INSTR_SRA,
     INSTR_OR,
     INSTR_AND,
-    INSTR_ECALL
+    INSTR_ECALL,
+    INSTR_UNKNOWN
 } Instruction;
 
 Instruction decoded_instr;
@@ -66,29 +67,35 @@ void execute_instr(uint32_t instr) {
     uint32_t imm_u = instr & 0xFFFFF000;
     uint32_t imm_j = (((instr >> 31) & 0x01) << 20) | (((instr >> 21) & 0x3FF) << 1) | (((instr >> 20) & 0x1) << 11) | (((instr >> 12) & 0xFF) << 12);
 
+    int32_t  simm_i = ((int32_t) imm_i << 20) >> 20;
+    int32_t  simm_s = ((int32_t) imm_s << 20) >> 20;
+    int32_t  simm_b = ((int32_t) imm_b << 19) >> 19;
+    int32_t  simm_u = (int32_t) imm_u;
+    int32_t  simm_j = ((int32_t) imm_j << 11) >> 11;
+
     switch (opcode) {
         case 0x37 : // LUI (U-type)
             decoded_instr = INSTR_LUI;
             if (rd != 0)
-                reg[rd] = (int32_t) imm_u;
+                reg[rd] = simm_u;
             pc = pc + 4;
             break;
         case 0x17 : // AUIPC (U-type)
             decoded_instr = INSTR_AUIPC;
             if (rd != 0)
-                reg[rd] = pc + (int32_t) imm_u;
+                reg[rd] = pc + simm_u;
             pc = pc + 4;
             break;
         case 0x6F : // JAL (J-type)
             decoded_instr = INSTR_JAL;
             if (rd != 0)
                 reg[rd] = pc + 4;
-            pc = pc + (int32_t) imm_j;
+            pc = pc + simm_j;
             break;
         case 0x67 : // JALR (I-type)
             decoded_instr = INSTR_JALR;
             uint32_t t = pc + 4;
-            pc = (reg[rs1] + imm_i) & 0xFFFFFFFE;
+            pc = (reg[rs1] + simm_i) & 0xFFFFFFFE;
             if (rd != 0)
                 reg[rd] = t;
             break;
@@ -97,49 +104,49 @@ void execute_instr(uint32_t instr) {
                 case 0x0 : // BEQ
                     decoded_instr = INSTR_BEQ;
                     if (reg[rs1] == reg[rs2])
-                        pc = pc + imm_b;
+                        pc = pc + simm_b;
                     else
                         pc = pc + 4;
                     break;
                 case 0x1 : // BNE
                     decoded_instr = INSTR_BNE;
                     if (reg[rs1] != reg[rs2])
-                        pc = pc + imm_b;
+                        pc = pc + simm_b;
                     else
                         pc = pc + 4;
                     break;
                 case 0x4 : // BLT
                     decoded_instr = INSTR_BLT;
                     if ((int32_t) reg[rs1] < (int32_t) reg[rs2])
-                        pc = pc + imm_b;
+                        pc = pc + simm_b;
                     else
                         pc = pc + 4;
                     break;
                 case 0x5 : // BGE
                     decoded_instr = INSTR_BGE;
                     if ((int32_t) reg[rs1] >= (int32_t) reg[rs2])
-                        pc = pc + imm_b;
+                        pc = pc + simm_b;
                     else
                         pc = pc + 4;
                     break;
                 case 0x6 : // BLTU
                     decoded_instr = INSTR_BLTU;
                     if (reg[rs1] < reg[rs2])
-                        pc = pc + imm_b;
+                        pc = pc + simm_b;
                     else
                         pc = pc + 4;
                     break;
                 case 0x7 : // BGEU
                     decoded_instr = INSTR_BGEU;
                     if (reg[rs1] >= reg[rs2])
-                        pc = pc + imm_b;
+                        pc = pc + simm_b;
                     else
                         pc = pc + 4;
                     break;
             }
             break;
         case 0x03 : {// Load instructions
-            uint32_t addr = reg[rs1] + imm_i;
+            uint32_t addr = reg[rs1] + simm_i;
             switch (funct3) {
                 case 0x0 : // LB
                     decoded_instr = INSTR_LB;
@@ -175,7 +182,7 @@ void execute_instr(uint32_t instr) {
             break;
         }
         case 0x23 : {// Store instructions
-            uint32_t addr = reg[rs1] + imm_s;
+            uint32_t addr = reg[rs1] + simm_s;
             switch (funct3) {
                 case 0x0 : // SB
                     decoded_instr = INSTR_SB;
@@ -204,13 +211,13 @@ void execute_instr(uint32_t instr) {
                 case 0x0 : // ADDI
                     decoded_instr = INSTR_ADDI;
                     if (rd != 0)
-                        reg[rd] = (int32_t) reg[rs1] + imm_i;
+                        reg[rd] = (int32_t) reg[rs1] + simm_i;
                     pc = pc + 4;
                     break;
                 case 0x2 : // SLTI
                     decoded_instr = INSTR_SLTI;
                     if (rd != 0)
-                        reg[rd] = ((int32_t) reg[rs1] < imm_i) ? 1 : 0;
+                        reg[rd] = ((int32_t) reg[rs1] < simm_i) ? 1 : 0;
                     pc = pc + 4;
                     break;
                 case 0x3 : // SLTIU
@@ -222,19 +229,19 @@ void execute_instr(uint32_t instr) {
                 case 0x4 : // XORI
                     decoded_instr = INSTR_XORI;
                     if (rd != 0)
-                        reg[rd] = reg[rs1] ^ imm_i;
+                        reg[rd] = reg[rs1] ^ simm_i;
                     pc = pc + 4;
                     break;
                 case 0x6 : // ORI
                     decoded_instr = INSTR_ORI;
                     if (rd != 0)
-                        reg[rd] = reg[rs1] | imm_i;
+                        reg[rd] = reg[rs1] | simm_i;
                     pc = pc + 4;
                     break;
                 case 0x7 : // ANDI
                     decoded_instr = INSTR_ANDI;
                     if (rd != 0)
-                        reg[rd] = reg[rs1] & imm_i;
+                        reg[rd] = reg[rs1] & simm_i;
                     pc = pc + 4;
                     break;
                 case 0x1 : // SLLI
@@ -325,12 +332,20 @@ void execute_instr(uint32_t instr) {
             }
             break;
         case 0x73 : // ECALL
-            decoded_instr = INSTR_ECALL;
-            exit(reg[3]);
+            if (instr == 0x73) {
+                decoded_instr = INSTR_ECALL;
+                exit(reg[3]);
+            }
+            else {
+                decoded_instr = INSTR_UNKNOWN;
+                pc = pc + 4;
+            }
             break;
         default :
-            fprintf(stderr, "Error: Unknown instruction\n");
-            exit(1);
+            pc = pc + 4;
+            break;
+            //fprintf(stderr, "Error: Unknown instruction\n");
+            //exit(1);
     }
 }
 
@@ -451,8 +466,10 @@ void print_decoded_instr() {
             printf("ECALL\n");
             break;
         default :
-            fprintf(stderr, "Error: Unknown instruction\n");
-            exit(1);
+            printf("Unknown instruction\n");
+            break;
+            //fprintf(stderr, "Error: Unknown instruction\n");
+            //exit(1);
     }
 }
 
@@ -474,7 +491,7 @@ int main(int argc, char **argv) {
     char buf[file_size];
     size_t size = fread(buf, 1, file_size, fp);
 
-    int MAX = 1000;
+    int MAX = 10000;
     pc = 0;
     // print the content of the file in 32-bit hexadecimal
     // with address
