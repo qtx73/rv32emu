@@ -44,6 +44,12 @@ typedef enum {
     INSTR_OR,
     INSTR_AND,
     INSTR_ECALL,
+    INSTR_CSRRW,
+    INSTR_CSRRS,
+    INSTR_CSRRC,
+    INSTR_CSRRWI,
+    INSTR_CSRRSI,
+    INSTR_CSRRCI,
     INSTR_UNKNOWN
 } Instruction;
 
@@ -52,6 +58,8 @@ Instruction decoded_instr;
 uint32_t pc; // Program counter
 uint32_t reg[32]; // Register file
 uint8_t mem[1 << 24]; // Memory
+
+uint32_t csr[4096]; // Control and Status Registers
 
 #define DEBUG
 #ifdef DEBUG
@@ -427,9 +435,75 @@ void execute_instr(uint32_t instr) {
                 exit(reg[3]);
             }
             else {
-                decoded_instr = INSTR_UNKNOWN;
-                pc = pc + 4;
-                debug("unknown system instruction : pc = 0x%x\n", pc);
+                uint32_t csr_addr = (instr >> 20) & 0xFFF;
+                uint32_t zimm = (instr >> 15) & 0x1F;
+                switch (funct3) {
+                case 0x01 : // CSRRW
+                    decoded_instr = INSTR_CSRRW;
+                    debug("csrrw : csr[0x%x] = reg[0x%x](0x%x), reg[0x%x] = csr[0x%x](0x%x)\n",
+                        csr_addr, rs1, reg[rs1], rd, csr_addr, rd != 0 ? csr[csr_addr] : 0);
+                    if (rd != 0) {
+                        reg[rd] = csr[csr_addr];
+                    }
+                    csr[csr_addr] = reg[rs1];
+                    pc = pc + 4;
+                    break;
+                case 0x02 : // CSRRS
+                    decoded_instr = INSTR_CSRRS;
+                    debug("csrrs : csr[0x%x](0x%x) = csr[0x%x](0x%x) | reg[0x%x](0x%x), reg[0x%x] = csr[0x%x](0x%x)\n",
+                        csr_addr, csr[csr_addr] | reg[rs1], csr_addr, csr[csr_addr], rs1, reg[rs1], rd, csr_addr, rd != 0 ? csr[csr_addr] : 0);
+                    if (rd != 0) {
+                        reg[rd] = csr[csr_addr];
+                    }
+                    csr[csr_addr] = csr[csr_addr] | reg[rs1];
+                    pc = pc + 4;
+                    break;
+                case 0x03 : // CSRRC
+                    decoded_instr = INSTR_CSRRC;
+                    debug("csrrc : csr[0x%x](0x%x) = csr[0x%x](0x%x) & ~reg[0x%x](0x%x), reg[0x%x] = csr[0x%x](0x%x)\n",
+                        csr_addr, csr[csr_addr] & ~reg[rs1], csr_addr, csr[csr_addr], rs1, reg[rs1], rd, csr_addr, rd != 0 ? csr[csr_addr] : 0);
+                    if (rd != 0) {
+                        reg[rd] = csr[csr_addr];
+                    }
+                    csr[csr_addr] = csr[csr_addr] & ~reg[rs1];
+                    pc = pc + 4;
+                    break;
+                case 0x05 : // CSRRWI
+                    decoded_instr = INSTR_CSRRWI;
+                    debug("csrrwi : csr[0x%x] = 0x%x, reg[0x%x] = csr[0x%x](0x%x)\n",
+                        csr_addr, zimm, rd, csr_addr, rd != 0 ? csr[csr_addr] : 0);
+                    if (rd != 0) {
+                        reg[rd] = csr[csr_addr];
+                    }
+                    csr[csr_addr] = zimm;
+                    pc = pc + 4;
+                    break;
+                case 0x06 : // CSRRSI
+                    decoded_instr = INSTR_CSRRSI;
+                    debug("csrrsi : csr[0x%x](0x%x) = csr[0x%x](0x%x) | 0x%x, reg[0x%x] = csr[0x%x](0x%x)\n",
+                        csr_addr, csr[csr_addr] | zimm, csr_addr, csr[csr_addr], zimm, rd, csr_addr, rd != 0 ? csr[csr_addr] : 0);
+                    if (rd != 0) {
+                        reg[rd] = csr[csr_addr];
+                    }
+                    csr[csr_addr] = csr[csr_addr] | zimm;
+                    pc = pc + 4;
+                    break;
+                case 0x07 : // CSRRCI
+                    decoded_instr = INSTR_CSRRCI;
+                    debug("csrrci : csr[0x%x](0x%x) = csr[0x%x](0x%x) & ~0x%x, reg[0x%x] = csr[0x%x](0x%x)\n",
+                        csr_addr, csr[csr_addr] & ~zimm, csr_addr, csr[csr_addr], zimm, rd, csr_addr, rd != 0 ? csr[csr_addr] : 0);
+                    if (rd != 0) {
+                        reg[rd] = csr[csr_addr];
+                    }
+                    csr[csr_addr] = csr[csr_addr] & ~zimm;
+                    pc = pc + 4;
+                    break;
+                default:
+                    decoded_instr = INSTR_UNKNOWN;
+                    pc = pc + 4;
+                    debug("unknown system instruction : pc = 0x%x\n", pc);
+                    break;
+                }
             }
             break;
         default :
@@ -581,7 +655,6 @@ int main(int argc, char **argv) {
     size_t file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    //char buf[file_size];
     size_t size = fread(mem, 1, file_size, fp);
 
     int MAX = 8000;
