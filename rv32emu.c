@@ -254,10 +254,10 @@ void execute_instr(uint32_t instr) {
                     debug("slti : reg[0x%x](0x%x) = (0x%x < 0x%x) ? 1 : 0\n",
                         rd, rd != 0 ? (reg[rd] < simm_i) : 0,
                         (int32_t) reg[rs1], simm_i);
-                    break;
                     if (rd != 0)
                         reg[rd] = ((int32_t) reg[rs1] < simm_i) ? 1 : 0;
                     pc += 4;
+                    break;
                 case 0x3 : // SLTIU
                     decoded_instr = INSTR_SLTIU;
                     debug("sltiu : reg[0x%x](0x%x) = (%u < %u) ? 1 : 0\n",
