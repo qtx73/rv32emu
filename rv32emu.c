@@ -581,8 +581,8 @@ int main(int argc, char **argv) {
     size_t file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    char buf[file_size];
-    size_t size = fread(buf, 1, file_size, fp);
+    //char buf[file_size];
+    size_t size = fread(mem, 1, file_size, fp);
 
     int MAX = 8000;
     pc = 0;
@@ -592,7 +592,7 @@ int main(int argc, char **argv) {
         printf("%08x: ", pc);
         uint32_t instr = 0;
         for (int j = 0; j < 4; j++) {
-            instr |= ((uint32_t)buf[pc + j] << (j * 8)) & (0xFF << (j * 8));
+            instr |= ((uint32_t)mem[pc + j] << (j * 8)) & (0xFF << (j * 8));
         }
         printf("%08x\n", instr);
         execute_instr(instr);
