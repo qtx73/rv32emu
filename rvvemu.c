@@ -31,9 +31,9 @@ void execute_vsetvli(uint32_t instr) {
     uint8_t vsew = (imm_i >> 3) & 0x7;
     uint8_t vta  = (imm_i >> 6) & 0x1;
     uint8_t vma  = (imm_i >> 7) & 0x1;
-    
+
     // Check for invalid reserved bits or invalid vsew/vlmul
-    if ((imm_i & 0xFFFFFFF0) != 0 || vsew > 0x3 || vlmul > 0x7) {
+    if ((imm_i & 0xFFFFFF00) != 0 || vsew > 0x3 || vlmul > 0x7) {
         vtype = 0x80000000; // Set vill bit (bit 31)
         vl = 0;
         if (rd != 0) xreg[rd] = 0;
@@ -62,7 +62,7 @@ void execute_vsetvli(uint32_t instr) {
     }
 
     // Calucate VLMAX
-    uint32_t vlmax = (VLEN / sew) * lmul_num / lmul_den;
+    uint32_t vlmax = (VLEN / sew) * (lmul_num / lmul_den);
     if (vlmax == 0) {
         vtype = 0x80000000; // Set vill bit (bit 31)
         vl = 0;
