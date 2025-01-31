@@ -37,6 +37,8 @@ void execute_vsetvli(uint32_t instr) {
         vtype = 0x80000000; // Set vill bit (bit 31)
         vl = 0;
         if (rd != 0) xreg[rd] = 0;
+        debug("vsetvli : xreg[0x%x] = 0x%x, vl = %d, vtype = 0x%x, vlmul = %d, vsew = %d, vta = %d, vma = %d\n",
+        rd, rd != 0 ? xreg[rd] : 0, vl, vtype, vlmul, vsew, vta, vma);
         return;
     }
 
@@ -54,6 +56,8 @@ void execute_vsetvli(uint32_t instr) {
         default: vtype = 0x80000000; // Set vill bit (bit 31)
                  vl = 0;
                  if (rd != 0) xreg[rd] = 0;
+                 debug("vsetvli : xreg[0x%x] = 0x%x, vl = %d, vtype = 0x%x, vlmul = %d, vsew = %d, vta = %d, vma = %d\n",
+                 rd, rd != 0 ? xreg[rd] : 0, vl, vtype, vlmul, vsew, vta, vma);
                  return;
     }
 
@@ -63,6 +67,8 @@ void execute_vsetvli(uint32_t instr) {
         vtype = 0x80000000; // Set vill bit (bit 31)
         vl = 0;
         if (rd != 0) xreg[rd] = 0;
+        debug("vsetvli : xreg[0x%x] = 0x%x, vl = %d, vtype = 0x%x, vlmul = %d, vsew = %d, vta = %d, vma = %d\n",
+        rd, rd != 0 ? xreg[rd] : 0, vl, vtype, vlmul, vsew, vta, vma);
         return;
     }
 
@@ -85,7 +91,10 @@ void execute_vsetvli(uint32_t instr) {
 
     // Set VTYPE
     if (rd != 0) xreg[rd] = vl;
-    vtype = (vma << 7) | (vta << 6) | (vsew << 3) | vlmul;    
+    vtype = (vma << 7) | (vta << 6) | (vsew << 3) | vlmul;   
+
+    debug("vsetvli : xreg[0x%x] = 0x%x, vl = %d, vtype = 0x%x, vlmul = %d, vsew = %d, vta = %d, vma = %d\n", 
+    rd, rd != 0 ? xreg[rd] : 0, vl, vtype, vlmul, vsew, vta, vma);
 }
 
 void execute_instr(uint32_t instr) {
@@ -426,6 +435,15 @@ void execute_instr(uint32_t instr) {
                         debug("unknown system instruction : pc = 0x%x\n", pc);
                         break;
                     }
+            }
+            break;
+        case 0x57 : // VSETVLI
+            if (funct3 == 0x7) {
+                pc = pc + 4;
+                execute_vsetvli(instr);
+            } else {
+                pc = pc + 4;
+                debug("unknown : pc = 0x%x\n", pc);
             }
             break;
         default :
