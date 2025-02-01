@@ -40,3 +40,43 @@ rd, rs1, avl value, effect on vl
 -, !x0, x[rs1], normal stripmining
 !x0, x0, ~0, set vl to vlmax
 x0, !x0, vl, keep vl
+
+----
+
+instruction
+load unit-stride
+vl8.v vd, (rs1)
+vl16.v vd, (rs1)
+vl32.v vd, (rs1)
+
+31-29 nf
+28    mew
+27-26 mop
+25    vm
+24-20 lumop
+19-15 rs1
+14-12 width
+11-7  vd
+6-0   0000111
+
+vm
+1 unmasked
+0 vector result, only where v0.mask[i] = 1
+
+mop
+00 unit-stride
+01 indexed-unordered
+10 strided
+11 indexed-ordered
+
+width = EEW
+0000 8 bit
+0101 16 bit
+0110 32 bit
+
+mew lumop
+0 00000 unit-stride load
+0 01000 unit-stride, whole register load
+0 01011 unit-stride, mask load, EEW=8
+0 10000 unit-stride fault-only-first
+
