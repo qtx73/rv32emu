@@ -22,6 +22,30 @@ uint32_t vtype;        // Vector Type Register
 #define debug(...)
 #endif
 
+// vector load instruction function
+// vl8.v, vl16.v, vl32.v, vl64.v, vl128.v
+void execute_vl(uint32_t instr) {
+    uint32_t vd = (instr >> 7) & 0x1F;
+    uint32_t width = (instr >> 12) & 0x3;
+    uint32_t rs1 = (instr >> 15) & 0x1F;
+    uint32_t lumop = (instr >> 20) & 0xF;
+    uint32_t vm = (instr >> 25) & 0x1;
+    uint32_t mop = (instr >> 26) & 0x3;
+    uint32_t mew = (instr >> 28) & 0x1;
+    uint32_t nf = (instr >> 29) & 0x7;
+
+    uint32_t sew;
+    switch (width) {
+        case 0: sew = 8; break;
+        case 5: sew = 16; break;
+        case 6: sew = 32; break;
+        default: return;
+    }
+
+    // under construction ...  
+}
+
+
 void execute_vsetvli(uint32_t instr) {
     uint32_t rd = (instr >> 7) & 0x1F;
     uint32_t rs1 = (instr >> 15) & 0x1F;
