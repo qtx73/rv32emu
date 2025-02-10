@@ -74,6 +74,72 @@ void execute_vsetvl(uint8_t rd, uint8_t avl, uint32_t vtypei) {
     return;
 }
 
+void execute_vload(uint32_t instr) {
+    uint8_t nf = (instr >> 29) & 0x7;
+    uint8_t mew = (instr >> 28) & 0x1;
+    uint8_t mop = (instr >> 26) & 0x3;
+    uint8_t vm = (instr >> 25) & 0x1;
+    uint8_t lumop = (instr >> 20) & 0x1F;
+    uint8_t rs1 = (instr >> 15) & 0x1F;
+    uint8_t width = (instr >> 12) & 0x7;
+    uint8_t vd = (instr >> 7) & 0x1F;
+
+    // only support unit-stride load
+    if (nf != 0) return ;
+    if (mew != 0) return ;
+    if (mop != 0) return ;
+    if (lumop != 0) return ;
+
+    uint8_t stride;
+    switch (width) {
+        case 0: stride = 1; break; // 8-bit
+        case 1: stride = 2; break; // 16-bit
+        case 2: stride = 4; break; // 32-bit
+        default: return;
+    }
+
+    uint32_t base = xreg[rs1];
+
+    for (uint32_t i = 0; i < vl; i++) {
+        for (uint32_t j = 0; j < stride; j++) {
+            vreg[vd][i * stride + j] = mem[base + i * stride + j];
+        }
+    }
+}
+
+void execute_vstore(uint32_t instr) {
+    uint8_t nf = (instr >> 29) & 0x7;
+    uint8_t mew = (instr >> 28) & 0x1;
+    uint8_t mop = (instr >> 26) & 0x3;
+    uint8_t vm = (instr >> 25) & 0x1;
+    uint8_t sumop = (instr >> 20) & 0x1F;
+    uint8_t rs1 = (instr >> 15) & 0x1F;
+    uint8_t width = (instr >> 12) & 0x7;
+    uint8_t vs3 = (instr >> 7) & 0x1F;
+
+    // only support unit-stride store
+    if (nf != 0) return ;
+    if (mew != 0) return ;
+    if (mop != 0) return ;
+    if (sumop != 0) return ;
+
+    uint8_t stride;
+    switch (width) {
+        case 0: stride = 1; break; // 8-bit
+        case 1: stride = 2; break; // 16-bit
+        case 2: stride = 4; break; // 32-bit
+        default: return;
+    }
+
+    uint32_t base = xreg[rs1];
+
+    for (uint32_t i = 0; i < vl; i++) {
+        for (uint32_t j = 0; j < stride; j++) {
+            mem[base + i * stride + j] = vreg[vs3][i * stride + j];
+        }
+    }   
+}
+
 void decode_rvv_instr(uint32_t instr) {
     uint32_t opcode = instr & 0x7F;
     switch (opcode) {
@@ -100,6 +166,14 @@ void decode_rvv_instr(uint32_t instr) {
                 }
                 execute_vsetvl(rd, avl, vtypei);
             }
-        }    
+        }
+        case 0x07: {
+            pc = pc + 4;
+            execute_vload(instr);
+        }
+        case 0x27: {
+            pc = pc + 4;
+            execute_vstore(instr);
+        }
     }
 }
