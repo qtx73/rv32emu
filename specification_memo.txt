@@ -1,0 +1,129 @@
+# configuration-setting instructions (vsetvli, vsetvl, vsetivli)
+
+vsetvli rd, rs1, vtypei   # rd = new vl, rs1 = AVL, vtypei = new vtype setting
+vsetivli rd, uimm, vtypei # rd = new vl, uimm = AVL, vtypei = new vtype setting
+vsetvl  rd, rs1, rs2      # rd = new vl, rs1 = AVL, rs2 = new vtype value
+
+the computer hardware itself then decides the actual number of items 
+it will handle in each chunk (this is called vl).
+
+ir[6:0] = 1010111
+ir[11:7] = rd[4:0]
+ir[14:12] = 111
+
+vsetvli
+ir[19:15] = rs1[4:0]
+ir[30:20] = vtypei[10:0]
+ir[31] = 0
+
+vsetivli
+ir[19:15] = uimm[4:0]
+ir[29:20] = vtypei[9:0]
+ir[31] = 1
+
+vsetvl
+ir[19:15] = rs1[4:0]
+ir[24:20] = rs2[4:0]
+ir[30:25] = 000000
+ir[31] = 1
+
+## vtype encoding
+
+vtype[31] = vill
+vtype[30:8] = 0
+vtype[7] = vma
+vtype[6] = vta
+vtype[5:3] = vsew[2:0]
+vtype[2:0] = vlmul[2:0]
+
+Suggested assembler names used for vset{i}vli vtypei immediate
+    e8    # SEW=8b
+    e16   # SEW=16b
+    e32   # SEW=32b
+    e64   # SEW=64b
+    mf8   # LMUL=1/8
+    mf4   # LMUL=1/4
+    mf2   # LMUL=1/2
+    m1    # LMUL=1, assumed if m setting absent
+    m2    # LMUL=2
+    m4    # LMUL=4
+    m8    # LMUL=8
+
+Examples:
+    vsetvli t0, a0, e8, ta, ma        # SEW= 8, LMUL=1
+    vsetvli t0, a0, e8, m2, ta, ma    # SEW= 8, LMUL=2
+    vsetvli t0, a0, e32, mf2, ta, ma  # SEW=32, LMUL=1/2
+
+### unsupported vtype values
+
+If the vtype value is not supported by the implementation, then the vill bit is set in vtype, 
+theremaining bits in vtype are set to zero, and the vl register is also set to zero.
+
+## AVL encoding
+
+When rs1 is not x0
+AVL = x[rs1][4:0]
+
+When rs1 is x0, rd is not x0
+AVL = ~0
+
+When rs1 is x0, rd is x0
+AVL = vl
+
+## constraints on setting vl
+
+1. Rule 1: Small Task:
+    `vl = AVL`  if  `AVL ≤ VLMAX`
+
+2. Rule 2: Medium Task:
+    `ceil(AVL / 2) ≤ vl ≤ VLMAX`  if  `AVL < (2 * VLMAX)`
+
+3. Rule 3: Large Task:
+    `vl = VLMAX`  if  `AVL ≥ (2 * VLMAX)`
+
+4. Rule 4: Predictable Results:
+    Deterministic on any given implementation for same input AVL and VLMAX values
+
+5. Rule 5:  Consequences of the Rules (Important Properties):
+
+   * a. Zero Task, Zero Slice:
+       `vl = 0` if `AVL = 0`
+
+   * b. Task Exists, Slice Exists:
+       `vl > 0` if `AVL > 0`
+
+   * c. Slice Size Limited by Maximum:
+       `vl ≤ VLMAX`
+
+   * d. Slice Size Limited by Task Remaining:
+       `vl ≤ AVL`
+
+   * e. Re-using `vl` as `AVL` (Usually) Keeps `vl` the Same:
+       a value read from `vl` when used as the AVL argument to `vset{i}vl{i}` 
+      results in the same value in `vl`, provided the resultant VLMAX equals 
+      the value of VLMAX at the time that `vl` was read
+
+---
+
+# Example: Load 16-bit values, widen multiply to 32b, shift 32b result
+# right by 3, store 32b values.
+# On entry:
+#  a0 holds the total number of elements to process
+#  a1 holds the address of the source array
+#  a2 holds the address of the destination array
+
+loop:
+    vsetvli a3, a0, e16, m4, ta, ma  # vtype = 16-bit integer vectors;
+                                     # also update a3 with vl (# of elements this iteration)
+    vle16.v v4, (a1)        # Get 16b vector
+    slli t1, a3, 1          # Multiply # elements this iteration by 2 bytes/source element
+    add a1, a1, t1          # Bump pointer
+    vwmul.vx v8, v4, x10    # Widening multiply into 32b in <v8--v15>
+
+    vsetvli x0, x0, e32, m8, ta, ma  # Operate on 32b values
+    vsrl.vi v8, v8, 3
+    vse32.v v8, (a2)        # Store vector of 32b elements
+    slli t1, a3, 2          # Multiply # elements this iteration by 4 bytes/destination element
+    add a2, a2, t1          # Bump pointer
+    sub a0, a0, a3          # Decrement count by vl
+    bnez a0, loop           # Any more?
