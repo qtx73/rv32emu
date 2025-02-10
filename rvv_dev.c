@@ -85,7 +85,6 @@ void execute_vload(uint32_t instr) {
     uint8_t vd = (instr >> 7) & 0x1F;
 
     // only support unit-stride load
-    if (nf != 0) return ;
     if (mew != 0) return ;
     if (mop != 0) return ;
     if (lumop != 0) return ;
@@ -102,16 +101,21 @@ void execute_vload(uint32_t instr) {
 
     uint8_t vmask[VLEN];
     for (uint32_t i = 0; i < vl; i++) {
-        int index = i / 8;
-        for (int j = 0; j < 8; j++) {
-            vmask[i] = (vreg[0][index] >> j) & 0x1;
-        }
+        int byte_index = i / 8;
+        int bit_index  = i % 8;
+        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
     }
 
+    uint8_t NFIELDS = nf + 1;
+    if (NFIELDS > 8) return;
+
     for (uint32_t i = 0; i < vl; i++) {
-        for (uint32_t j = 0; j < stride; j++) {
-            if (vm == 1 || (vm == 0 && vmask[i] == 1))
-                vreg[vd][i * stride + j] = mem[base + i * stride + j];
+        for (uint32_t s = 0; s < NFIELDS; s++) {
+            uint32_t addr = base + i * stride * NFIELDS + s * stride;
+            for (uint32_t j = 0; j < stride; j++) {
+                if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                    vreg[vd + s][i * stride + j] = mem[addr + j];
+            }
         }
     }
 }
@@ -127,7 +131,6 @@ void execute_vstore(uint32_t instr) {
     uint8_t vs3 = (instr >> 7) & 0x1F;
 
     // only support unit-stride store
-    if (nf != 0) return ;
     if (mew != 0) return ;
     if (mop != 0) return ;
     if (sumop != 0) return ;
@@ -144,16 +147,21 @@ void execute_vstore(uint32_t instr) {
 
     uint8_t vmask[VLEN];
     for (uint32_t i = 0; i < vl; i++) {
-        int index = i / 8;
-        for (int j = 0; j < 8; j++) {
-            vmask[i] = (vreg[0][index] >> j) & 0x1;
-        }
+        int byte_index = i / 8;
+        int bit_index  = i % 8;
+        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
     }
 
+    uint8_t NFIELDS = nf + 1;
+    if (NFIELDS > 8) return;
+
     for (uint32_t i = 0; i < vl; i++) {
-        for (uint32_t j = 0; j < stride; j++) {
-            if (vm == 1 || (vm == 0 && vmask[i] == 1))
-                mem[base + i * stride + j] = vreg[vs3][i * stride + j];
+        for (uint32_t s = 0; s < NFIELDS; s++) {
+            uint32_t addr = base + i * stride * NFIELDS + s * stride;
+            for (uint32_t j = 0; j < stride; j++) {
+                if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                    mem[addr + j] = vreg[vs3 + s][i * stride + j];
+            }
         }
     }   
 }
