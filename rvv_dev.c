@@ -6,7 +6,7 @@ extern uint32_t pc;           // Program counter
 extern uint32_t xreg[32];     // Register file
 extern uint8_t  mem[1 << 24]; // Memory
 
-uint8_t  vreg[32][16]; // Vector Register file
+uint8_t  vreg[32][VLEN/8]; // Vector Register file
 uint32_t vl;           // Vector Length
 uint32_t vtype;        // Vector Type Register
 
@@ -100,9 +100,18 @@ void execute_vload(uint32_t instr) {
 
     uint32_t base = xreg[rs1];
 
+    uint8_t vmask[VLEN];
+    for (uint32_t i = 0; i < vl; i++) {
+        int index = i / 8;
+        for (int j = 0; j < 8; j++) {
+            vmask[i] = (vreg[0][index] >> j) & 0x1;
+        }
+    }
+
     for (uint32_t i = 0; i < vl; i++) {
         for (uint32_t j = 0; j < stride; j++) {
-            vreg[vd][i * stride + j] = mem[base + i * stride + j];
+            if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                vreg[vd][i * stride + j] = mem[base + i * stride + j];
         }
     }
 }
@@ -133,9 +142,18 @@ void execute_vstore(uint32_t instr) {
 
     uint32_t base = xreg[rs1];
 
+    uint8_t vmask[VLEN];
+    for (uint32_t i = 0; i < vl; i++) {
+        int index = i / 8;
+        for (int j = 0; j < 8; j++) {
+            vmask[i] = (vreg[0][index] >> j) & 0x1;
+        }
+    }
+
     for (uint32_t i = 0; i < vl; i++) {
         for (uint32_t j = 0; j < stride; j++) {
-            mem[base + i * stride + j] = vreg[vs3][i * stride + j];
+            if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                mem[base + i * stride + j] = vreg[vs3][i * stride + j];
         }
     }   
 }
