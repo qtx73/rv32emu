@@ -310,18 +310,29 @@ void execute_varith(uint32_t instr) {
     uint8_t vsew = (vtype >> 3) & 0x7;
     uint8_t eew = 1 << vsew;
 
-    if (funct3 == 0x0) { // OPIVV
-        uint8_t vs1 = (instr >> 15) & 0x1F;
+    if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4) { // OPIVV, OPIVI, OPIVX
         uint8_t vd = (instr >> 7) & 0x1F;
         for (uint32_t i = 0; i < vl; i++) {
             if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
                 uint32_t op1 = 0, op2 = 0, res = 0;
                 int32_t op1s = 0, op2s = 0;
+
                 for (uint32_t j = 0; j < eew; j++) {
-                    op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
                     op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
                 }
+
+                if (funct3 == 0x0) { // OPIVV
+                    uint8_t vs1 = (instr >> 15) & 0x1F;
+                    for (uint32_t j = 0; j < eew; j++) {
+                        op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
+                    }
+                } else if (funct3 == 0x3) { // OPIVI
+                    op1 = (instr >> 15) & 0x1F;
+                } else if (funct3 == 0x4) { // OPIVX
+                    op1 = xreg[(instr >> 15) & 0x1F];
+                }
                 op1s = (int32_t)op1; op2s = (int32_t)op2;
+
                 switch (funct6) {
                     case 0x00 : res = op2s + op1s; break;
                     case 0x02 : res = op2s - op1s; break;
@@ -333,6 +344,7 @@ void execute_varith(uint32_t instr) {
                     case 0x0A : res = op2 | op1; break;
                     case 0x0B : res = op2 ^ op1; break;
                 }
+                
                 for (uint32_t j = 0; j < eew; j++) {
                     vreg[vd][i * eew + j] = (res >> (j * 8)) & 0xFF;
                 }
