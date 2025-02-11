@@ -295,11 +295,13 @@ void execute_vstore(uint32_t instr) {
 }
 
 void execute_varith(uint32_t instr) {
+    // Extract fields
     uint8_t funct6 = (instr >> 26) & 0x3F;
     uint8_t funct3 = (instr >> 12) & 0x7;
     uint8_t vm = (instr >> 25) & 0x1;
     uint8_t vs2 = (instr >> 20) & 0x1F;
 
+    // Build element-wise mask from v0
     uint8_t vmask[VLEN];
     for (uint32_t i = 0; i < vl; i++) {
         int byte_index = i / 8;
@@ -307,44 +309,72 @@ void execute_varith(uint32_t instr) {
         vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
     }
 
+    // Determine effective element width (in bytes)
     uint8_t vsew = (vtype >> 3) & 0x7;
     uint8_t eew = 1 << vsew;
 
     if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4) { // OPIVV, OPIVI, OPIVX
-        uint8_t vd = (instr >> 7) & 0x1F;
+        uint8_t vd = (instr >> 7) & 0x1F; // Destination vector register vd
+
         for (uint32_t i = 0; i < vl; i++) {
             if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
                 uint32_t op1 = 0, op2 = 0, res = 0;
                 int32_t op1s = 0, op2s = 0;
 
+                // Load operands 2 from vector register vs2
                 for (uint32_t j = 0; j < eew; j++) {
                     op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
                 }
+                op2s = (int32_t)op2;
 
-                if (funct3 == 0x0) { // OPIVV
+                // Select operand 1 based on funct3
+                if (funct3 == 0x0) { // OPIVV : op1 from vector register vs1
                     uint8_t vs1 = (instr >> 15) & 0x1F;
                     for (uint32_t j = 0; j < eew; j++) {
                         op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
+                        op1s = (int32_t)op1; 
                     }
-                } else if (funct3 == 0x3) { // OPIVI
+                } else if (funct3 == 0x3) { // OPIVI : op1 from immediate[4:0]
                     op1 = (instr >> 15) & 0x1F;
-                } else if (funct3 == 0x4) { // OPIVX
+                    op1s = (op1 & 0x10) ? (int32_t)(op1 | 0xFFFFFFF0) // Sign-extend
+                                        : (int32_t) op1;
+                } else if (funct3 == 0x4) { // OPIVX : op1 from x[rs1]
                     op1 = xreg[(instr >> 15) & 0x1F];
+                    op1s = (int32_t)op1; 
                 }
-                op1s = (int32_t)op1; op2s = (int32_t)op2;
 
+                // Perform operation based on funct6
                 switch (funct6) {
-                    case 0x00 : res = op2s + op1s; break;
-                    case 0x02 : res = op2s - op1s; break;
-                    case 0x04 : res = (op2 < op1) ? op2 : op1; break;
-                    case 0x05 : res = (op2s < op1s) ? op2s : op1s; break;
-                    case 0x06 : res = (op2 > op1) ? op2 : op1; break;
-                    case 0x07 : res = (op2s > op1s) ? op2s : op1s; break;
-                    case 0x09 : res = op2 & op1; break;
-                    case 0x0A : res = op2 | op1; break;
-                    case 0x0B : res = op2 ^ op1; break;
+                    case 0x00 : // ADD
+                        res = op2s + op1s; 
+                        break;
+                    case 0x02 : // Sub
+                        res = op2s - op1s; 
+                        break;
+                    case 0x04 : // minu
+                        res = (op2 < op1) ? op2 : op1; 
+                        break;
+                    case 0x05 : // min
+                        res = (op2s < op1s) ? op2s : op1s; 
+                        break;
+                    case 0x06 : // maxu
+                        res = (op2 > op1) ? op2 : op1; 
+                        break;
+                    case 0x07 : // max
+                        res = (op2s > op1s) ? op2s : op1s; 
+                        break;
+                    case 0x09 : // and
+                        res = op2 & op1; 
+                        break;
+                    case 0x0A : // or
+                        res = op2 | op1; 
+                        break;
+                    case 0x0B : // xor
+                        res = op2 ^ op1; 
+                        break;
                 }
-                
+
+                // Write the result back to the destination vector register vd
                 for (uint32_t j = 0; j < eew; j++) {
                     vreg[vd][i * eew + j] = (res >> (j * 8)) & 0xFF;
                 }
