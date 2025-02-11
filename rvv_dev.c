@@ -93,23 +93,6 @@ void execute_vload(uint32_t instr) {
         default: return;
     }
 
-    uint32_t stride;
-    if (mop == 0) {// unit-stride
-        uint8_t lumop = (instr >> 20) & 0x1F;
-        if (lumop == 0) { // unit-stride
-            ; // eew is set by width
-        } else if (lumop == 0xB) { // unit-stride, mask load
-            if (width != 0) return;
-            if (nf != 0) return;
-            eew = 1; // 8-bit
-        }
-        stride = eew;
-    } else if (mop == 0x2) { // strided
-        stride = (instr >> 20) & 0x1F;
-    } else {
-        return;
-    }
-
     uint32_t base = xreg[rs1];
 
     uint8_t vmask[VLEN];
@@ -122,12 +105,62 @@ void execute_vload(uint32_t instr) {
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
 
-    for (uint32_t i = 0; i < vl; i++) {
-        for (uint32_t s = 0; s < NFIELDS; s++) {
-            uint32_t addr = base + i * stride * NFIELDS + s * stride;
-            for (uint32_t j = 0; j < eew; j++) {
-                if (vm == 1 || (vm == 0 && vmask[i] == 1))
-                    vreg[vd + s][i * eew + j] = mem[addr + j];
+    if (mop == 0x0 || mop == 0x2) {
+        uint32_t stride;
+        if (mop == 0) { // Unit-stride mode
+            uint8_t lumop = (instr >> 20) & 0x1F;
+            if (lumop == 0) { // Regular unit-stride
+                ; // eew is set by width
+            } else if (lumop == 0xB) { // unit-stride, mask load
+                if (width != 0) return;
+                if (nf != 0) return;
+                eew = 1; // 8-bit
+            }
+            stride = eew;
+        } else if (mop == 0x2) { // Strided mode.
+            stride = (instr >> 20) & 0x1F; 
+        } else {
+            return;
+        }
+
+        for (uint32_t i = 0; i < vl; i++) {
+            for (uint32_t s = 0; s < NFIELDS; s++) {
+                uint32_t addr = base + i * stride * NFIELDS + s * stride;
+                for (uint32_t j = 0; j < eew; j++) {
+                    if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                        vreg[vd + s][i * eew + j] = mem[addr + j];
+                }
+            }
+        }
+    } else if (mop == 0x1 || mop == 0x3) {
+        uint8_t index_reg = (instr >> 20) & 0x1F;
+        for (uint32_t i = 0; i < vl; i++) {
+            uint32_t offset = 0;
+            uint8_t sew = (vtype >> 3) & 0x7;
+            switch (sew) {
+                case 0: { // 8-bit
+                    offset = vreg[index_reg][i];
+                    break;
+                }
+                case 1: { // 16-bit
+                    offset = vreg[index_reg][i * 2] 
+                            | (vreg[index_reg][i * 2 + 1] << 8);
+                    break;
+                }
+                case 2: { // 32-bit
+                    offset = vreg[index_reg][i * 4] 
+                            | (vreg[index_reg][i * 4 + 1] << 8) 
+                            | (vreg[index_reg][i * 4 + 2] << 16) 
+                            | (vreg[index_reg][i * 4 + 3] << 24);
+                    break;
+                }
+            }
+            for (uint32_t s = 0; s < NFIELDS; s++) {
+                uint32_t addr = base + offset + s * eew;
+                for (uint32_t j = 0; j < eew; j++) {
+                    if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                        vreg[vd + s][i * eew + j] = mem[addr + j];
+                }
             }
         }
     }
@@ -152,23 +185,6 @@ void execute_vstore(uint32_t instr) {
         default: return;
     }
 
-    uint32_t stride;
-    if (mop == 0) {// unit-stride
-        uint8_t sumop = (instr >> 20) & 0x1F;
-        if (sumop == 0) { // unit-stride
-            ; // eew is set by width
-        } else if (sumop == 0xB) { // unit-stride, mask load
-            if (width != 0) return;
-            if (nf != 0) return;
-            eew = 1; // 8-bit
-        }
-        stride = eew;
-    } else if (mop == 0x2) { // strided
-        stride = (instr >> 20) & 0x1F;
-    } else {
-        return;
-    }
-
     uint32_t base = xreg[rs1];
 
     uint8_t vmask[VLEN];
@@ -181,15 +197,65 @@ void execute_vstore(uint32_t instr) {
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
 
-    for (uint32_t i = 0; i < vl; i++) {
-        for (uint32_t s = 0; s < NFIELDS; s++) {
-            uint32_t addr = base + i * stride * NFIELDS + s * stride;
-            for (uint32_t j = 0; j < eew; j++) {
-                if (vm == 1 || (vm == 0 && vmask[i] == 1))
-                    mem[addr + j] = vreg[vs3 + s][i * eew + j];
+    if (mop == 0x0 || mop == 0x2) {
+        uint32_t stride;
+        if (mop == 0) { // Unit-stride mode
+            uint8_t sumop = (instr >> 20) & 0x1F;
+            if (sumop == 0) { // Regular unit-stride
+                ; // eew is set by width
+            } else if (sumop == 0xB) { // unit-stride, mask load
+                if (width != 0) return;
+                if (nf != 0) return;
+                eew = 1; // 8-bit
+            }
+            stride = eew;
+        } else if (mop == 0x2) { // Strided mode.
+            stride = (instr >> 20) & 0x1F; 
+        } else {
+            return;
+        }
+
+        for (uint32_t i = 0; i < vl; i++) {
+            for (uint32_t s = 0; s < NFIELDS; s++) {
+                uint32_t addr = base + i * stride * NFIELDS + s * stride;
+                for (uint32_t j = 0; j < eew; j++) {
+                    if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                        mem[addr + j] = vreg[vs3 + s][i * eew + j];
+                }
             }
         }
-    }   
+    } else if (mop == 0x1 || mop == 0x3) {
+        uint8_t index_reg = (instr >> 20) & 0x1F;
+        for (uint32_t i = 0; i < vl; i++) {
+            uint32_t offset = 0;
+            uint8_t sew = (vtype >> 3) & 0x7;
+            switch (sew) {
+                case 0: { // 8-bit
+                    offset = vreg[index_reg][i];
+                    break;
+                }
+                case 1: { // 16-bit
+                    offset = vreg[index_reg][i * 2] 
+                            | (vreg[index_reg][i * 2 + 1] << 8);
+                    break;
+                }
+                case 2: { // 32-bit
+                    offset = vreg[index_reg][i * 4] 
+                            | (vreg[index_reg][i * 4 + 1] << 8) 
+                            | (vreg[index_reg][i * 4 + 2] << 16) 
+                            | (vreg[index_reg][i * 4 + 3] << 24);
+                    break;
+                }
+            }
+            for (uint32_t s = 0; s < NFIELDS; s++) {
+                uint32_t addr = base + offset + s * eew;
+                for (uint32_t j = 0; j < eew; j++) {
+                    if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                        mem[addr + j] = vreg[vs3 + s][i * eew + j];
+                }
+            }
+        }
+    }  
 }
 
 void decode_rvv_instr(uint32_t instr) {
