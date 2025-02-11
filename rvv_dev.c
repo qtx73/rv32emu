@@ -294,6 +294,53 @@ void execute_vstore(uint32_t instr) {
     }  
 }
 
+void execute_varith(uint32_t instr) {
+    uint8_t funct6 = (instr >> 26) & 0x3F;
+    uint8_t funct3 = (instr >> 12) & 0x7;
+    uint8_t vm = (instr >> 25) & 0x1;
+    uint8_t vs2 = (instr >> 20) & 0x1F;
+
+    uint8_t vmask[VLEN];
+    for (uint32_t i = 0; i < vl; i++) {
+        int byte_index = i / 8;
+        int bit_index  = i % 8;
+        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
+    }
+
+    uint8_t vsew = (vtype >> 3) & 0x7;
+    uint8_t eew = 1 << vsew;
+
+    if (funct3 == 0x0) { // OPIVV
+        uint8_t vs1 = (instr >> 15) & 0x1F;
+        uint8_t vd = (instr >> 7) & 0x1F;
+        for (uint32_t i = 0; i < vl; i++) {
+            if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
+                uint32_t op1 = 0, op2 = 0, res = 0;
+                int32_t op1s = 0, op2s = 0;
+                for (uint32_t j = 0; j < eew; j++) {
+                    op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
+                    op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
+                }
+                op1s = (int32_t)op1; op2s = (int32_t)op2;
+                switch (funct6) {
+                    case 0x00 : res = op2s + op1s; break;
+                    case 0x02 : res = op2s - op1s; break;
+                    case 0x04 : res = (op2 < op1) ? op2 : op1; break;
+                    case 0x05 : res = (op2s < op1s) ? op2s : op1s; break;
+                    case 0x06 : res = (op2 > op1) ? op2 : op1; break;
+                    case 0x07 : res = (op2s > op1s) ? op2s : op1s; break;
+                    case 0x09 : res = op2 & op1; break;
+                    case 0x0A : res = op2 | op1; break;
+                    case 0x0B : res = op2 ^ op1; break;
+                }
+                for (uint32_t j = 0; j < eew; j++) {
+                    vreg[vd][i * eew + j] = (res >> (j * 8)) & 0xFF;
+                }
+            }
+        }
+    }
+}
+
 void decode_rvv_instr(uint32_t instr) {
     uint32_t opcode = instr & 0x7F;
     switch (opcode) {
