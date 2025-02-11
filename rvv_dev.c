@@ -105,6 +105,23 @@ void execute_vload(uint32_t instr) {
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
 
+    if (mop == 0) {
+        uint8_t lumop = (instr >> 20) & 0x1F;
+        if (lumop == 0x08) {  // Whole register load
+            uint32_t evl = VLEN/eew;
+            for (uint32_t i = 0; i < evl; i++) {
+                for (uint32_t s = 0; s < NFIELDS; s++) {
+                    uint32_t addr = base + i * NFIELDS * eew + s * eew;
+                    for (uint32_t j = 0; j < eew; j++) {
+                        if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                            vreg[vd + s][i * eew + j] = mem[addr + j];
+                    }
+                }
+            }
+            return;
+        }
+    }
+
     if (mop == 0x0 || mop == 0x2) {
         uint32_t stride;
         if (mop == 0) { // Unit-stride mode
@@ -132,6 +149,7 @@ void execute_vload(uint32_t instr) {
                 }
             }
         }
+        return;
     } else if (mop == 0x1 || mop == 0x3) {
         uint8_t index_reg = (instr >> 20) & 0x1F;
         for (uint32_t i = 0; i < vl; i++) {
@@ -163,6 +181,7 @@ void execute_vload(uint32_t instr) {
                 }
             }
         }
+        return;
     }
 }
 
@@ -196,6 +215,23 @@ void execute_vstore(uint32_t instr) {
 
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
+
+    if (mop == 0x0) {
+        uint8_t sumop = (instr >> 20) & 0x1F;
+        if (sumop == 0x8) {  // Whole register store
+            uint32_t evl = VLEN/eew;
+            for (uint32_t i = 0; i < evl; i++) {
+                for (uint32_t s = 0; s < NFIELDS; s++) {
+                    uint32_t addr = base + i * NFIELDS * eew + s * eew;
+                    for (uint32_t j = 0; j < eew; j++) {
+                        if (vm == 1 || (vm == 0 && vmask[i] == 1))
+                            mem[addr + j] = vreg[vs3 + s][i * eew + j];
+                    }
+                }
+            }
+            return;
+        }
+    }
 
     if (mop == 0x0 || mop == 0x2) {
         uint32_t stride;
