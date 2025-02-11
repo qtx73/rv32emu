@@ -294,6 +294,14 @@ void execute_vstore(uint32_t instr) {
     }  
 }
 
+int32_t signed_extend(uint32_t val, uint8_t size) {
+    if (val & (1 << (size - 1))) {
+        return (int32_t)(val | (0xFFFFFFFF << size));
+    } else {
+        return (int32_t)val;
+    }
+}
+
 void execute_varith(uint32_t instr) {
     // Extract fields
     uint8_t funct6 = (instr >> 26) & 0x3F;
@@ -325,30 +333,29 @@ void execute_varith(uint32_t instr) {
                 for (uint32_t j = 0; j < eew; j++) {
                     op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
                 }
-                op2s = (int32_t)op2;
+                op2s = signed_extend(op2, 8 * (1 << eew));
 
                 // Select operand 1 based on funct3
                 if (funct3 == 0x0) { // OPIVV : op1 from vector register vs1
                     uint8_t vs1 = (instr >> 15) & 0x1F;
                     for (uint32_t j = 0; j < eew; j++) {
                         op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
-                        op1s = (int32_t)op1; 
+                        op1s = signed_extend(op1, 8 * (1 << eew));
                     }
                 } else if (funct3 == 0x3) { // OPIVI : op1 from immediate[4:0]
                     op1 = (instr >> 15) & 0x1F;
-                    op1s = (op1 & 0x10) ? (int32_t)(op1 | 0xFFFFFFF0) // Sign-extend
-                                        : (int32_t) op1;
+                    op1s = signed_extend(op1, 5);
                 } else if (funct3 == 0x4) { // OPIVX : op1 from x[rs1]
                     op1 = xreg[(instr >> 15) & 0x1F];
-                    op1s = (int32_t)op1; 
+                    op1s = signed_extend(op1, 8 * (1 << eew));
                 }
 
                 // Perform operation based on funct6
                 switch (funct6) {
-                    case 0x00 : // ADD
+                    case 0x00 : // add
                         res = op2s + op1s; 
                         break;
-                    case 0x02 : // Sub
+                    case 0x02 : // sub
                         res = op2s - op1s; 
                         break;
                     case 0x04 : // minu
@@ -372,11 +379,62 @@ void execute_varith(uint32_t instr) {
                     case 0x0B : // xor
                         res = op2 ^ op1; 
                         break;
+                    case 0x30 : // waddu
+                        res = op2 + op1; 
+                        break;
+                    case 0x31 : // wadd
+                        res = op2s + op1s; 
+                        break;
+                    case 0x32 : // wsubu
+                        res = op2 - op1; 
+                        break;
+                    case 0x33 : // wsub
+                        res = op2s - op1s; 
+                        break;
+                    case 0x34 : // waddu.w
+                        res = op2 + op1; 
+                        break;
+                    case 0x35 : // wadd.w
+                        res = op2s + op1s; 
+                        break;
+                    case 0x36 : // wsubu.w
+                        res = op2 - op1; 
+                        break;
+                    case 0x37 : // wsub.w
+                        res = op2s - op1s; 
+                        break;
+                    case 0x38 : // wmulu
+                        res = op2 * op1; 
+                        break;
+                    case 0x3A : // wmulsu
+                        res = op2s * op1;
+                        break;
+                    case 0x3B : // wmul
+                        res = op2s * op1s; 
+                        break;
                 }
 
                 // Write the result back to the destination vector register vd
-                for (uint32_t j = 0; j < eew; j++) {
-                    vreg[vd][i * eew + j] = (res >> (j * 8)) & 0xFF;
+                uint8_t write_back_eew = eew;
+                if (funct6 >> 4 == 0x3) { // widening operation
+                    if (eew == 1) {
+                        write_back_eew = 2;
+                    } else if (eew == 2) {
+                        write_back_eew = 4;
+                    } else {
+                        write_back_eew = 8;
+                    }
+                } else if (funct6 >> 2 == 0xB) { // narrowing operation
+                    if (eew == 8) {
+                        write_back_eew = 4;
+                    } else if (eew == 4) {
+                        write_back_eew = 2;
+                    } else {
+                        write_back_eew = 1;
+                    }
+                }
+                for (uint32_t j = 0; j < write_back_eew; j++) {
+                    vreg[vd][i * write_back_eew + j] = (res >> (j * 8)) & 0xFF;
                 }
             }
         }
@@ -385,32 +443,37 @@ void execute_varith(uint32_t instr) {
 
 void decode_rvv_instr(uint32_t instr) {
     uint32_t opcode = instr & 0x7F;
+    uint8_t funct3 = (instr >> 12) & 0x7;
     switch (opcode) {
-        case 0x57 : {
-            uint8_t rd = (instr >> 7) & 0x1F;
-            uint8_t rs1 = (instr >> 15) & 0x1F;
-            uint8_t avl;
-            uint8_t vtypei;
-            if (((instr >> 25) &0x7) == 0x7) { // VSETVL
-                if (((instr >> 31) & 1) == 0x0) { // vsetvli
-                    pc = pc + 4;
-                    avl = compute_avl(rs1, rd);
-                    vtypei = (instr >> 20) & 0x3FF;
+        case 0x57 : 
+            if (funct3 == 0x7) {
+                uint8_t rd = (instr >> 7) & 0x1F;
+                uint8_t rs1 = (instr >> 15) & 0x1F;
+                uint8_t avl;
+                uint8_t vtypei;
+                if (((instr >> 25) &0x7) == 0x7) { // VSETVL
+                    if (((instr >> 31) & 1) == 0x0) { // vsetvli
+                        pc = pc + 4;
+                        avl = compute_avl(rs1, rd);
+                        vtypei = (instr >> 20) & 0x3FF;
+                    }
+                    if (((instr >> 30) & 0x3) == 0x3) { // vsetivli
+                        pc = pc + 4;
+                        avl = (instr >> 15) & 0x1F;
+                        vtypei = (instr >> 20) & 0x3FF;
+                    }
+                    if (((instr >> 30) & 0x3) == 0x2) { // vsetvl
+                        pc = pc + 4;
+                        avl = compute_avl(rs1, rd);
+                        vtypei = xreg[(instr >> 20) & 0x1F];
+                    }
+                    execute_vsetvl(rd, avl, vtypei);
                 }
-                if (((instr >> 30) & 0x3) == 0x3) { // vsetivli
-                    pc = pc + 4;
-                    avl = (instr >> 15) & 0x1F;
-                    vtypei = (instr >> 20) & 0x3FF;
-                }
-                if (((instr >> 30) & 0x3) == 0x2) { // vsetvl
-                    pc = pc + 4;
-                    avl = compute_avl(rs1, rd);
-                    vtypei = xreg[(instr >> 20) & 0x1F];
-                }
-                execute_vsetvl(rd, avl, vtypei);
+                return;
+            } else {
+                execute_varith(instr);
+                return;
             }
-            return;
-        }
         case 0x07: {
             pc = pc + 4;
             execute_vload(instr);
