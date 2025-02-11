@@ -228,8 +228,8 @@ void execute_vstore(uint32_t instr) {
         uint8_t index_reg = (instr >> 20) & 0x1F;
         for (uint32_t i = 0; i < vl; i++) {
             uint32_t offset = 0;
-            uint8_t sew = (vtype >> 3) & 0x7;
-            switch (sew) {
+            uint8_t sew_bits = (vtype >> 3) & 0x7;
+            switch (sew_bits) {
                 case 0: { // 8-bit
                     offset = vreg[index_reg][i];
                     break;
