@@ -27,18 +27,17 @@ int main(int argc, char **argv) {
     size_t file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    // Load program into memory
-    // size_t max_mem_size = sizeof(mem);
-    // size_t read_size = file_size > max_mem_size ? max_mem_size : file_size;
-    // if (read_size != file_size) {
-    //     fprintf(stderr, "Warning: File %s is too large, only %zu bytes will be loaded\n", argv[1], max_mem_size);
-    // }
-    // size_t bytes_load = fread(mem, 1, read_size, fp);
-    // if (bytes_load != read_size) {
-    //     fprintf(stderr, "Error: fread failed to read file %s\n", argv[1]);
-    //     return 1;
-    // }
-    size_t size = fread(mem, 1, file_size, fp);
+    //Load program into memory
+    size_t max_mem_size = sizeof(mem);
+    size_t read_size = file_size > max_mem_size ? max_mem_size : file_size;
+    if (read_size != file_size) {
+        fprintf(stderr, "Warning: File %s is too large, only %zu bytes will be loaded\n", argv[1], max_mem_size);
+    }
+    size_t bytes_load = fread(mem, 1, read_size, fp);
+    if (bytes_load != read_size) {
+        fprintf(stderr, "Error: fread failed to read file %s\n", argv[1]);
+        return 1;
+    }
 
     int max_cycle = 800;
     pc = 0;
