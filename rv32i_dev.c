@@ -11,7 +11,7 @@ extern uint32_t pc;      // Program counter
 extern uint32_t xreg[32]; // Register file
 extern uint8_t  mem[1 << 24]; // Memory
 
-void decode_rv32i_instr(uint32_t instr) {
+int decode_rv32i_instr(uint32_t instr) {
     uint32_t opcode = instr & 0x7F;
     uint32_t rd = (instr >> 7) & 0x1F;
     uint32_t rs1 = (instr >> 15) & 0x1F;
@@ -37,26 +37,26 @@ void decode_rv32i_instr(uint32_t instr) {
                 xreg[rd] = simm_u;
             pc = pc + 4;
             debug("lui : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-            break;
+            return 1;
         case 0x17 : // AUIPC (U-type)
             if (rd != 0)
                 xreg[rd] = pc + simm_u;
             pc = pc + 4;
             debug("auipc : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-            break;
+            return 1;
         case 0x6F : // JAL (J-type)
             if (rd != 0)
                 xreg[rd] = pc + 4;
             pc = pc + simm_j;
             debug("jal : xreg[0x%x] = 0x%x, pc = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0, pc);
-            break;
+            return 1;
         case 0x67 : {// JALR (I-type)
             uint32_t t = pc + 4;
             pc = (xreg[rs1] + simm_i) & 0xFFFFFFFE;
             if (rd != 0)
                 xreg[rd] = t;
             debug("jalr : xreg[0x%x] = 0x%x, pc = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0, pc);
-            break;
+            return 1;
         }
         case 0x63 : // Branch instructions
             switch (funct3) {
@@ -66,44 +66,43 @@ void decode_rv32i_instr(uint32_t instr) {
                         pc = pc + simm_b;
                     else
                         pc = pc + 4;
-                    break;
+                    return 1;
                 case 0x1 : // BNE
                     debug("bne : if(xreg[0x%x](0x%x) != xreg[0x%x](0x%x)) pc (0x%x) = 0x%x + 0x%x\n", rs1, xreg[rs1], rs2, xreg[rs2], pc + simm_b, pc, simm_b);
                     if (xreg[rs1] != xreg[rs2])
                         pc = pc + simm_b;
                     else
                         pc = pc + 4;
-                    break;
+                    return 1;
                 case 0x4 : // BLT
                     debug("blt : if(xreg[0x%x](0x%x) < xreg[0x%x](0x%x)) pc = 0x%x\n", rs1, xreg[rs1], rs2, xreg[rs2], pc + simm_b);
                     if ((int32_t) xreg[rs1] < (int32_t) xreg[rs2])
                         pc = pc + simm_b;
                     else
                         pc = pc + 4;
-                    break;
+                    return 1;
                 case 0x5 : // BGE
                     debug("bge : if(xreg[0x%x](0x%x) >= xreg[0x%x](0x%x)) pc = 0x%x\n", rs1, (int32_t)xreg[rs1], rs2, (int32_t)xreg[rs2], pc + simm_b);
                     if ((int32_t) xreg[rs1] >= (int32_t) xreg[rs2])
                         pc = pc + simm_b;
                     else
                         pc = pc + 4;
-                    break;
+                    return 1;
                 case 0x6 : // BLTU
                     debug("bltu : if(xreg[0x%x](0x%x) < xreg[0x%x](0x%x)) pc = 0x%x\n", rs1, xreg[rs1], rs2, xreg[rs2], pc + simm_b);
                     if (xreg[rs1] < xreg[rs2])
                         pc = pc + simm_b;
                     else
                         pc = pc + 4;
-                    break;
+                    return 1;
                 case 0x7 : // BGEU
                     debug("bgeu : if(xreg[0x%x](0x%x) >= xreg[0x%x](0x%x)) pc = 0x%x\n", rs1, xreg[rs1], rs2, xreg[rs2], pc + simm_b);
                     if (xreg[rs1] >= xreg[rs2])
                         pc = pc + simm_b;
                     else
                         pc = pc + 4;
-                    break;
+                    return 1;
             }
-            break;
         case 0x03 : {// Load instructions
             uint32_t addr = xreg[rs1] + simm_i;
             switch (funct3) {
@@ -113,7 +112,7 @@ void decode_rv32i_instr(uint32_t instr) {
                         xreg[rd] = val;
                     pc = pc + 4;
                     debug("lb : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-                    break;
+                    return 1;
                 }
                 case 0x1 : {// LH
                     int32_t val = mem[addr] | (mem[addr + 1] << 8);
@@ -122,7 +121,7 @@ void decode_rv32i_instr(uint32_t instr) {
                         xreg[rd] = val;
                     pc = pc + 4;
                     debug("lh : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-                    break;
+                    return 1;
                 }
                 case 0x2 : {// LW
                     int32_t val = mem[addr] | (mem[addr + 1] << 8) | (mem[addr + 2] << 16) | (mem[addr + 3] << 24);
@@ -130,22 +129,21 @@ void decode_rv32i_instr(uint32_t instr) {
                         xreg[rd] = val;
                     pc = pc + 4;
                     debug("lw : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-                    break;
+                    return 1;
                 }
                 case 0x4 : // LBU
                     if (rd != 0)
                         xreg[rd] = mem[addr];
                     pc = pc + 4;
                     debug("lbu : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-                    break;
+                    return 1;
                 case 0x5 : // LHU
                     if (rd != 0)
                         xreg[rd] = mem[addr] | (mem[addr + 1] << 8);
                     pc = pc + 4;
                     debug("lhu : xreg[0x%x] = 0x%x\n", rd, rd != 0 ? xreg[rd] : 0);
-                    break;
+                    return 1;
             }
-            break;
         }
         case 0x23 : {// Store instructions
             uint32_t addr = xreg[rs1] + simm_s;
@@ -154,13 +152,13 @@ void decode_rv32i_instr(uint32_t instr) {
                     mem[addr] = xreg[rs2] & 0xFF;
                     pc = pc + 4;
                     debug("sb : mem[0x%x] = 0x%x\n", addr, xreg[rs2] & 0xFF);
-                    break;
+                    return 1;
                 case 0x1 : // SH
                     mem[addr] = xreg[rs2] & 0xFF;
                     mem[addr + 1] = (xreg[rs2] >> 8) & 0xFF;
                     pc = pc + 4;
                     debug("sh : mem[0x%x..0x%x] = 0x%x\n", addr, addr+1, xreg[rs2] & 0xFFFF);
-                    break;
+                    return 1;
                 case 0x2 : // SW
                     mem[addr] = xreg[rs2] & 0xFF;
                     mem[addr + 1] = (xreg[rs2] >> 8) & 0xFF;
@@ -168,9 +166,8 @@ void decode_rv32i_instr(uint32_t instr) {
                     mem[addr + 3] = (xreg[rs2] >> 24) & 0xFF;
                     pc = pc + 4;
                     debug("sw : mem[0x%x..0x%x] = 0x%x\n", addr, addr+3, xreg[rs2]);
-                    break;
+                    return 1;
             }
-            break;
         }
         case 0x13 : // Immediate instructions
             switch (funct3) {
@@ -181,7 +178,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = (int32_t) xreg[rs1] + simm_i;
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x2 : // SLTI
                     debug("slti : xreg[0x%x](0x%x) = (0x%x < 0x%x) ? 1 : 0\n",
                         rd, rd != 0 ? (xreg[rd] < simm_i) : 0,
@@ -189,7 +186,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = ((int32_t) xreg[rs1] < simm_i) ? 1 : 0;
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x3 : // SLTIU
                     debug("sltiu : xreg[0x%x](0x%x) = (%u < %u) ? 1 : 0\n",
                         rd, rd != 0 ? (xreg[rd] < simm_i) : 0,
@@ -197,7 +194,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = (xreg[rs1] < simm_i) ? 1 : 0;
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x4 : // XORI
                     debug("xori : xreg[0x%x](0x%x) = 0x%x ^ 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
@@ -205,7 +202,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] ^ simm_i;
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x6 : // ORI
                     debug("ori : xreg[0x%x](0x%x) = 0x%x | 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
@@ -213,7 +210,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] | simm_i;
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x7 : // ANDI
                     debug("andi : xreg[0x%x](0x%x) = 0x%x & 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
@@ -221,7 +218,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] & simm_i;
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x1 : // SLLI
                     debug("slli : xreg[0x%x](0x%x) = 0x%x << 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
@@ -229,7 +226,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] << (imm_i & 0x1F);
                     pc += 4;
-                    break;
+                    return 1;
                 case 0x5 : // SRLI or SRAI
                     if ((funct7 >> 5) == 0) {
                         debug("srli : xreg[0x%x](0x%x) = 0x%x >> 0x%x\n",
@@ -238,6 +235,7 @@ void decode_rv32i_instr(uint32_t instr) {
                         if (rd != 0)
                             xreg[rd] = xreg[rs1] >> (imm_i & 0x1F);
                         pc += 4;
+                        return 1;
                     } else {
                         debug("srai : xreg[0x%x](0x%x) = 0x%x >> 0x%x\n",
                             rd, rd != 0 ? xreg[rd] : 0,
@@ -245,10 +243,9 @@ void decode_rv32i_instr(uint32_t instr) {
                         if (rd != 0)
                             xreg[rd] = ((int32_t) xreg[rs1]) >> (imm_i & 0x1F);
                         pc += 4;
+                        return 1;
                     }
-                    break;
             }
-            break;
         case 0x33 : // Register instructions
             switch (funct3) {
                 case 0x0 : // ADD, SUB
@@ -259,6 +256,7 @@ void decode_rv32i_instr(uint32_t instr) {
                         debug("add : xreg[0x%x](0x%x) = 0x%x + 0x%x\n",
                             rd, rd != 0 ? xreg[rd] : 0,
                             (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
+                        return 1;
                     } else {
                         if (rd != 0)
                             xreg[rd] = (int32_t) xreg[rs1] - (int32_t) xreg[rs2];
@@ -266,8 +264,8 @@ void decode_rv32i_instr(uint32_t instr) {
                         debug("sub : xreg[0x%x](0x%x) = 0x%x - 0x%x\n",
                             rd, rd != 0 ? xreg[rd] : 0,
                             (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
+                        return 1;
                     }
-                    break;
                 case 0x1 : // SLL
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] << (xreg[rs2] & 0x1F);
@@ -275,7 +273,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     debug("sll : xreg[0x%x](0x%x) = 0x%x << 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
                         xreg[rs1], (xreg[rs2] & 0x1F));
-                    break;
+                    return 1;
                 case 0x2 : // SLT
                     if (rd != 0)
                         xreg[rd] = ((int32_t) xreg[rs1] < (int32_t) xreg[rs2]) ? 1 : 0;
@@ -283,7 +281,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     debug("slt : xreg[0x%x](0x%x) = (0x%x < 0x%x) ? 1 : 0\n",
                         rd, rd != 0 ? xreg[rd] : 0,
                         (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
-                    break;
+                    return 1;
                 case 0x3 : // SLTU
                     if (rd != 0)
                         xreg[rd] = (xreg[rs1] < xreg[rs2]) ? 1 : 0;
@@ -291,7 +289,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     debug("sltu : xreg[0x%x](0x%x) = (%u < %u) ? 1 : 0\n",
                         rd, rd != 0 ? xreg[rd] : 0,
                         xreg[rs1], xreg[rs2]);
-                    break;
+                    return 1;
                 case 0x4 : // XOR
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] ^ xreg[rs2];
@@ -299,7 +297,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     debug("xor : xreg[0x%x](0x%x) = 0x%x ^ 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
                         (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
-                    break;
+                    return 1;
                 case 0x5 : // SRL, SRA
                     if (funct7 == 0x00) {
                         if (rd != 0)
@@ -308,6 +306,7 @@ void decode_rv32i_instr(uint32_t instr) {
                         debug("srl : xreg[0x%x](0x%x) = 0x%x >> 0x%x\n",
                             rd, rd != 0 ? xreg[rd] : 0,
                             (int32_t) xreg[rs1], (xreg[rs2] & 0x1F));
+                        return 1;
                     } else {
                         if (rd != 0)
                             xreg[rd] = ((int32_t) xreg[rs1]) >> (xreg[rs2] & 0x1F);
@@ -315,8 +314,8 @@ void decode_rv32i_instr(uint32_t instr) {
                         debug("sra : xreg[0x%x](0x%x) = 0x%x >> 0x%x\n",
                             rd, rd != 0 ? xreg[rd] : 0,
                             (int32_t) xreg[rs1], (xreg[rs2] & 0x1F));
+                        return 1;
                     }
-                    break;
                 case 0x6 : // OR
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] | xreg[rs2];
@@ -324,7 +323,7 @@ void decode_rv32i_instr(uint32_t instr) {
                     debug("or : xreg[0x%x](0x%x) = 0x%x | 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
                         (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
-                    break;
+                    return 1;
                 case 0x7 : // AND
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] & xreg[rs2];
@@ -332,21 +331,15 @@ void decode_rv32i_instr(uint32_t instr) {
                     debug("and : xreg[0x%x](0x%x) = 0x%x & 0x%x\n",
                         rd, rd != 0 ? xreg[rd] : 0,
                         (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
-                    break;
+                    return 1;
             }
-            break;
         case 0x73 : // ECALL
             if (instr == 0x73) {
                 debug("ecall : exit(0x%x)\n", xreg[3]);
                 exit(xreg[3]);
             } else {
-                debug("unknown : pc = 0x%x\n", pc);
-                pc += 4;
+                return 0;
             }
-            break;
-        default :
-            pc = pc + 4;
-            debug("unknown : pc = 0x%x\n", pc);
-            break;
-    }    
+    }
+    return 0;
 }

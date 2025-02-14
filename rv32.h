@@ -1,5 +1,5 @@
-void decode_rv32i_instr(uint32_t);
-void decode_rvv_instr(uint32_t);
+int decode_rv32i_instr(uint32_t);
+int decode_rvv_instr(uint32_t);
 
 #define DEBUG
 #ifdef DEBUG

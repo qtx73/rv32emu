@@ -441,7 +441,7 @@ void execute_varith(uint32_t instr) {
     }
 }
 
-void decode_rvv_instr(uint32_t instr) {
+int decode_rvv_instr(uint32_t instr) {
     uint32_t opcode = instr & 0x7F;
     uint8_t funct3 = (instr >> 12) & 0x7;
     switch (opcode) {
@@ -469,20 +469,22 @@ void decode_rvv_instr(uint32_t instr) {
                     }
                     execute_vsetvl(rd, avl, vtypei);
                 }
-                return;
+                return 1;
             } else {
                 execute_varith(instr);
-                return;
+                return 1;
             }
         case 0x07: {
             pc = pc + 4;
             execute_vload(instr);
-            return;
+            return 1;
         }
         case 0x27: {
             pc = pc + 4;
             execute_vstore(instr);
-            return;
+            return 1;
         }
+        default:
+            return 0;
     }
 }

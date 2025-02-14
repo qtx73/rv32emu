@@ -9,7 +9,7 @@
 
 uint32_t pc;       // Program counter
 uint32_t xreg[32]; // Register file
-uint8_t mem[1 << 24]; // Memory
+uint8_t mem[1 << 18]; // Memory (256KB)
 
 int main(int argc, char **argv) {
     if (argc != 2) {
@@ -22,28 +22,49 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // size of file
+    // Get file size
     fseek(fp, 0, SEEK_END);
     size_t file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
+    // Load program into memory
+    // size_t max_mem_size = sizeof(mem);
+    // size_t read_size = file_size > max_mem_size ? max_mem_size : file_size;
+    // if (read_size != file_size) {
+    //     fprintf(stderr, "Warning: File %s is too large, only %zu bytes will be loaded\n", argv[1], max_mem_size);
+    // }
+    // size_t bytes_load = fread(mem, 1, read_size, fp);
+    // if (bytes_load != read_size) {
+    //     fprintf(stderr, "Error: fread failed to read file %s\n", argv[1]);
+    //     return 1;
+    // }
     size_t size = fread(mem, 1, file_size, fp);
 
-    int MAX = 800;
+    int max_cycle = 800;
     pc = 0;
-    uint32_t time = 0;
+    uint32_t cycle_count = 0;
 
-    while (time < MAX) {
+    while (cycle_count < max_cycle) {
         printf("%08x: ", pc);
         uint32_t instr = 0;
         for (int j = 0; j < 4; j++) {
             instr |= ((uint32_t)mem[pc + j] << (j * 8)) & (0xFF << (j * 8));
         }
-        decode_rvv_instr(instr);
-        decode_rv32i_instr(instr);
+
+        int instr_valid = 0;
+        instr_valid = decode_rv32i_instr(instr);
+
+        if (instr_valid == 0) {
+            instr_valid = decode_rvv_instr(instr);
+        }
+
+        if (instr_valid == 0) {
+            pc = pc + 4;
+            debug("unknown : pc = 0x%x, instr = 0x%08x\n", pc, instr);  
+        }
         printf("--------------------\n");
-        time++;
+        cycle_count++;
     }
 
-    return -1;
+    return -1; // Indicate that the program has not finished
 }
