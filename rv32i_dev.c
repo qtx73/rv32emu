@@ -257,7 +257,7 @@ int decode_rv32i_instr(uint32_t instr) {
                             rd, rd != 0 ? xreg[rd] : 0,
                             (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
                         return 1;
-                    } else {
+                    } else if (funct7 == 0x20) {
                         if (rd != 0)
                             xreg[rd] = (int32_t) xreg[rs1] - (int32_t) xreg[rs2];
                         pc += 4;
@@ -266,6 +266,7 @@ int decode_rv32i_instr(uint32_t instr) {
                             (int32_t) xreg[rs1], (int32_t) xreg[rs2]);
                         return 1;
                     }
+                    return 0;
                 case 0x1 : // SLL
                     if (rd != 0)
                         xreg[rd] = xreg[rs1] << (xreg[rs2] & 0x1F);
