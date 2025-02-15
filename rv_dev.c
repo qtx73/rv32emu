@@ -39,27 +39,31 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int max_cycle = 800;
+    int max_cycle = 80;
     pc = 0;
     uint32_t cycle_count = 0;
 
     while (cycle_count < max_cycle) {
-        printf("%08x: ", pc);
         uint32_t instr = 0;
         for (int j = 0; j < 4; j++) {
             instr |= ((uint32_t)mem[pc + j] << (j * 8)) & (0xFF << (j * 8));
         }
+        printf("%08x : %08x : ", pc, instr);
 
         int instr_valid = 0;
         instr_valid = decode_rv32i_instr(instr);
+
+        if (instr_valid == 0) {
+            instr_valid = decode_rv32m_instr(instr);
+        }
 
         if (instr_valid == 0) {
             instr_valid = decode_rvv_instr(instr);
         }
 
         if (instr_valid == 0) {
-            pc = pc + 4;
-            debug("unknown : pc = 0x%x, instr = 0x%08x\n", pc, instr);  
+            debug("unknown : instr = 0x%08x\n", instr);
+            pc = pc + 4;  
         }
         printf("--------------------\n");
         cycle_count++;
