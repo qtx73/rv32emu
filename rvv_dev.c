@@ -1,4 +1,7 @@
 #include <stdint.h>
+#include <stdio.h>
+
+#include "rv32.h"
 
 #define VLEN 128
 
@@ -70,7 +73,6 @@ void execute_vsetvl(uint8_t rd, uint8_t avl, uint32_t vtypei) {
 
     // Set VTYPE
     vtype = (vma << 7) | (vta << 6) | (vsew << 3) | vlmul;
-
     return;
 }
 
@@ -451,25 +453,34 @@ int decode_rvv_instr(uint32_t instr) {
                 uint8_t rs1 = (instr >> 15) & 0x1F;
                 uint8_t avl;
                 uint8_t vtypei;
-                if (((instr >> 25) &0x7) == 0x7) { // VSETVL
+                if (((instr >> 12) &0x7) == 0x7) { // VSETVL
                     if (((instr >> 31) & 1) == 0x0) { // vsetvli
                         pc = pc + 4;
                         avl = compute_avl(rs1, rd);
                         vtypei = (instr >> 20) & 0x3FF;
+                        execute_vsetvl(rd, avl, vtypei);
+                        debug("vsetvli : vl=%d, vtype=%d\n", vl, vtype);
+                        return 1;
                     }
                     if (((instr >> 30) & 0x3) == 0x3) { // vsetivli
                         pc = pc + 4;
                         avl = (instr >> 15) & 0x1F;
                         vtypei = (instr >> 20) & 0x3FF;
+                        execute_vsetvl(rd, avl, vtypei);
+                        debug("vsetivli : vl=%d, vtype=%d\n", vl, vtype);
+                        return 1;
                     }
                     if (((instr >> 30) & 0x3) == 0x2) { // vsetvl
                         pc = pc + 4;
                         avl = compute_avl(rs1, rd);
                         vtypei = xreg[(instr >> 20) & 0x1F];
+                        execute_vsetvl(rd, avl, vtypei);
+                        debug("vsetvl : vl=%d, vtype=%d\n", vl, vtype);
+                        return 1;
                     }
-                    execute_vsetvl(rd, avl, vtypei);
+                    return 0;
                 }
-                return 1;
+                return 0;
             } else {
                 execute_varith(instr);
                 return 1;
