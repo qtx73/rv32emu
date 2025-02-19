@@ -77,6 +77,7 @@ void execute_vsetvl(uint8_t rd, uint8_t avl, uint32_t vtypei) {
 }
 
 void execute_vload(uint32_t instr) {
+    // Decode instruction fields
     uint8_t nf = (instr >> 29) & 0x7;
     uint8_t mew = (instr >> 28) & 0x1;
     uint8_t mop = (instr >> 26) & 0x3;
@@ -87,6 +88,7 @@ void execute_vload(uint32_t instr) {
 
     if (mew != 0) return ; // 128-bit load not supported
 
+    // Determine effective element width (eew) in bytes.
     uint8_t eew;
     switch (width) {
         case 0: eew = 1; break; // 8-bit
@@ -95,8 +97,10 @@ void execute_vload(uint32_t instr) {
         default: return;
     }
 
+    // Base address for load
     uint32_t base = xreg[rs1];
 
+    // Build vector mask from v0
     uint8_t vmask[VLEN];
     for (uint32_t i = 0; i < vl; i++) {
         int byte_index = i / 8;
@@ -107,9 +111,10 @@ void execute_vload(uint32_t instr) {
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
 
+    // Check for whole register load
     if (mop == 0) {
         uint8_t lumop = (instr >> 20) & 0x1F;
-        if (lumop == 0x08) {  // Whole register load
+        if (lumop == 0x08) {  // Whole register load 
             uint32_t evl = VLEN/eew;
             for (uint32_t i = 0; i < evl; i++) {
                 for (uint32_t s = 0; s < NFIELDS; s++) {
