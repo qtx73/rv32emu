@@ -86,41 +86,42 @@ void execute_vsetvl(uint8_t rd, uint8_t avl, uint32_t vtypei) {
 }
 
 void execute_vload(uint32_t instr) {
-    // Decode instruction fields
-    uint8_t nf = (instr >> 29) & 0x7;
-    uint8_t mew = (instr >> 28) & 0x1;
-    uint8_t mop = (instr >> 26) & 0x3;
-    uint8_t vm = (instr >> 25) & 0x1;
-    uint8_t rs1 = (instr >> 15) & 0x1F;
-    uint8_t width = (instr >> 12) & 0x7;
-    uint8_t vd = (instr >> 7) & 0x1F;
+    // Decode instruction fields from the 32-bit instruction word
+    uint8_t nf = (instr >> 29) & 0x7;       // Number of fields minus 1
+    uint8_t mew = (instr >> 28) & 0x1;      // Memory element width
+    uint8_t mop = (instr >> 26) & 0x3;      // Memory addressing mode
+    uint8_t vm = (instr >> 25) & 0x1;       // Vector mask flag (1=unmasked, 0=masked)
+    uint8_t rs1 = (instr >> 15) & 0x1F;     // Base address register (x-register)
+    uint8_t width = (instr >> 12) & 0x7;    // Width encoding field
+    uint8_t vd = (instr >> 7) & 0x1F;       // Destination vector register
 
-    if (mew != 0) return ; // 128-bit load not supported
+    if (mew != 0) return; // 128-bit load not supported
 
-    // Determine effective element width (eew) in bytes.
+    // Convert width encoding to effective element width (EEW) in bytes
     uint8_t eew;
     switch (width) {
         case 0: eew = 1; break; // 8-bit
         case 1: eew = 2; break; // 16-bit
         case 2: eew = 4; break; // 32-bit
-        default: return;
+        default: return;        // Unsupported width
     }
 
-    // Base address for load
+    // Calculate base address for memory operations
     uint32_t base = xreg[rs1];
 
-    // Build vector mask from v0
+    // Get mask bits from v0 register if masked operation (vm=0)
     uint8_t vmask[VLEN];
     build_vmask(vmask);
 
+    // Calculate total number of fields to load
     uint8_t NFIELDS = nf + 1;
-    if (NFIELDS > 8) return;
+    if (NFIELDS > 8) return;    // Spec limits to maximum 8 fields
 
-    // Check for whole register load
+    // --- Handle whole register load mode ---
     if (mop == 0) {
         uint8_t lumop = (instr >> 20) & 0x1F;
-        if (lumop == 0x08) {  // Whole register load 
-            uint32_t evl = VLEN/eew;
+        if (lumop == 0x08) {  // Whole register load unit-stride
+            uint32_t evl = VLEN/eew;  // Elements per register
             for (uint32_t i = 0; i < evl; i++) {
                 for (uint32_t s = 0; s < NFIELDS; s++) {
                     uint32_t addr = base + i * NFIELDS * eew + s * eew;
@@ -134,50 +135,55 @@ void execute_vload(uint32_t instr) {
         }
     }
 
+    // --- Handle unit-stride and strided modes ---
     if (mop == 0x0 || mop == 0x2) {
         uint32_t stride;
-        if (mop == 0) { // Unit-stride mode
+        if (mop == 0) {  // Unit-stride mode
             uint8_t lumop = (instr >> 20) & 0x1F;
-            if (lumop == 0) { // Regular unit-stride
-                ; // eew is set by width
-            } else if (lumop == 0xB) { // unit-stride, mask load
-                if (width != 0) return;
-                if (nf != 0) return;
-                eew = 1; // 8-bit
+            if (lumop == 0) {  // Regular unit-stride
+                ; // eew already set by width
+            } else if (lumop == 0xB) {  // Load mask bits (unit-stride)
+                if (width != 0) return;  // Must be byte width
+                if (nf != 0) return;     // Must be single-field
+                eew = 1;  // Force 8-bit elements
             }
-            stride = eew;
-        } else if (mop == 0x2) { // Strided mode.
-            stride = (instr >> 20) & 0x1F; 
+            stride = eew;  // In unit-stride, stride equals EEW
+        } else if (mop == 0x2) {  // Strided mode
+            stride = (instr >> 20) & 0x1F;  // Explicit stride value
         } else {
-            return;
+            return;  // Should be unreachable
         }
 
-        for (uint32_t i = 0; i < vl; i++) {
-            for (uint32_t s = 0; s < NFIELDS; s++) {
+        // Load data from memory to vector registers
+        for (uint32_t i = 0; i < vl; i++) {  // Loop through elements up to vector length
+            for (uint32_t s = 0; s < NFIELDS; s++) {  // Loop through fields
                 uint32_t addr = base + i * stride * NFIELDS + s * stride;
-                for (uint32_t j = 0; j < eew; j++) {
+                for (uint32_t j = 0; j < eew; j++) {  // Loop through bytes in element
                     if (vm == 1 || (vm == 0 && vmask[i] == 1))
                         vreg[vd + s][i * eew + j] = mem[addr + j];
                 }
             }
         }
         return;
-    } else if (mop == 0x1 || mop == 0x3) {
-        uint8_t index_reg = (instr >> 20) & 0x1F;
+    } 
+    // --- Handle indexed modes ---
+    else if (mop == 0x1 || mop == 0x3) {  // Indexed (unordered or ordered)
+        uint8_t index_reg = (instr >> 20) & 0x1F;  // Register containing index values
         for (uint32_t i = 0; i < vl; i++) {
+            // Extract offset from index register based on SEW
             uint32_t offset = 0;
             uint8_t sew_bits = (vtype >> 3) & 0x7;
             switch (sew_bits) {
-                case 0: { // 8-bit
+                case 0: {  // 8-bit SEW
                     offset = vreg[index_reg][i];
                     break;
                 }
-                case 1: { // 16-bit
+                case 1: {  // 16-bit SEW
                     offset = vreg[index_reg][i * 2] 
                             | (vreg[index_reg][i * 2 + 1] << 8);
                     break;
                 }
-                case 2: { // 32-bit
+                case 2: {  // 32-bit SEW
                     offset = vreg[index_reg][i * 4] 
                             | (vreg[index_reg][i * 4 + 1] << 8) 
                             | (vreg[index_reg][i * 4 + 2] << 16) 
@@ -185,6 +191,7 @@ void execute_vload(uint32_t instr) {
                     break;
                 }
             }
+            // Load each field using calculated offset
             for (uint32_t s = 0; s < NFIELDS; s++) {
                 uint32_t addr = base + offset + s * eew;
                 for (uint32_t j = 0; j < eew; j++) {
@@ -198,36 +205,42 @@ void execute_vload(uint32_t instr) {
 }
 
 void execute_vstore(uint32_t instr) {
-    uint8_t nf = (instr >> 29) & 0x7;
-    uint8_t mew = (instr >> 28) & 0x1;
-    uint8_t mop = (instr >> 26) & 0x3;
-    uint8_t vm = (instr >> 25) & 0x1;
-    uint8_t rs1 = (instr >> 15) & 0x1F;
-    uint8_t width = (instr >> 12) & 0x7;
-    uint8_t vs3 = (instr >> 7) & 0x1F;
+    // Decode instruction fields
+    uint8_t nf = (instr >> 29) & 0x7;       // Number of fields minus 1
+    uint8_t mew = (instr >> 28) & 0x1;      // Memory element width
+    uint8_t mop = (instr >> 26) & 0x3;      // Memory addressing mode
+    uint8_t vm = (instr >> 25) & 0x1;       // Vector mask flag (1=unmasked, 0=masked)
+    uint8_t rs1 = (instr >> 15) & 0x1F;     // Base address register (x-register)
+    uint8_t width = (instr >> 12) & 0x7;    // Width encoding field
+    uint8_t vs3 = (instr >> 7) & 0x1F;      // Source vector register
 
-    if (mew != 0) return ;  // 128-bit store not supported
+    if (mew != 0) return;  // 128-bit store not supported
 
+    // Convert width encoding to effective element width (EEW) in bytes
     uint8_t eew;
     switch (width) {
         case 0: eew = 1; break; // 8-bit
         case 1: eew = 2; break; // 16-bit
         case 2: eew = 4; break; // 32-bit
-        default: return;
+        default: return;        // Unsupported width
     }
 
+    // Calculate base address for memory operations
     uint32_t base = xreg[rs1];
 
+    // Get mask bits from v0 register if masked operation (vm=0)
     uint8_t vmask[VLEN];
     build_vmask(vmask);
 
+    // Calculate total number of fields to store
     uint8_t NFIELDS = nf + 1;
-    if (NFIELDS > 8) return;
+    if (NFIELDS > 8) return;    // Spec limits to maximum 8 fields
 
+    // --- Handle whole register store mode ---
     if (mop == 0x0) {
         uint8_t sumop = (instr >> 20) & 0x1F;
         if (sumop == 0x8) {  // Whole register store
-            uint32_t evl = VLEN/eew;
+            uint32_t evl = VLEN/eew;  // Elements per register
             for (uint32_t i = 0; i < evl; i++) {
                 for (uint32_t s = 0; s < NFIELDS; s++) {
                     uint32_t addr = base + i * NFIELDS * eew + s * eew;
@@ -241,49 +254,54 @@ void execute_vstore(uint32_t instr) {
         }
     }
 
+    // --- Handle unit-stride and strided modes ---
     if (mop == 0x0 || mop == 0x2) {
         uint32_t stride;
-        if (mop == 0) { // Unit-stride mode
+        if (mop == 0) {  // Unit-stride mode
             uint8_t sumop = (instr >> 20) & 0x1F;
-            if (sumop == 0) { // Regular unit-stride
-                ; // eew is set by width
-            } else if (sumop == 0xB) { // unit-stride, mask load
-                if (width != 0) return;
-                if (nf != 0) return;
-                eew = 1; // 8-bit
+            if (sumop == 0) {  // Regular unit-stride
+                ; // eew already set by width
+            } else if (sumop == 0xB) {  // Store mask bits (unit-stride)
+                if (width != 0) return;  // Must be byte width
+                if (nf != 0) return;     // Must be single-field
+                eew = 1;  // Force 8-bit elements
             }
-            stride = eew;
-        } else if (mop == 0x2) { // Strided mode.
-            stride = (instr >> 20) & 0x1F; 
+            stride = eew;  // In unit-stride, stride equals EEW
+        } else if (mop == 0x2) {  // Strided mode
+            stride = (instr >> 20) & 0x1F;  // Explicit stride value
         } else {
-            return;
+            return;  // Should be unreachable
         }
 
-        for (uint32_t i = 0; i < vl; i++) {
-            for (uint32_t s = 0; s < NFIELDS; s++) {
+        // Store data from vector registers to memory
+        for (uint32_t i = 0; i < vl; i++) {  // Loop through elements up to vector length
+            for (uint32_t s = 0; s < NFIELDS; s++) {  // Loop through fields
                 uint32_t addr = base + i * stride * NFIELDS + s * stride;
-                for (uint32_t j = 0; j < eew; j++) {
+                for (uint32_t j = 0; j < eew; j++) {  // Loop through bytes in element
                     if (vm == 1 || (vm == 0 && vmask[i] == 1))
                         mem[addr + j] = vreg[vs3 + s][i * eew + j];
                 }
             }
         }
-    } else if (mop == 0x1 || mop == 0x3) {
-        uint8_t index_reg = (instr >> 20) & 0x1F;
+    } 
+    // --- Handle indexed modes ---
+    else if (mop == 0x1 || mop == 0x3) {  // Indexed (unordered or ordered)
+        uint8_t index_reg = (instr >> 20) & 0x1F;  // Register containing index values
         for (uint32_t i = 0; i < vl; i++) {
+            // Extract offset from index register based on SEW
             uint32_t offset = 0;
             uint8_t sew_bits = (vtype >> 3) & 0x7;
             switch (sew_bits) {
-                case 0: { // 8-bit
+                case 0: {  // 8-bit SEW
                     offset = vreg[index_reg][i];
                     break;
                 }
-                case 1: { // 16-bit
+                case 1: {  // 16-bit SEW
                     offset = vreg[index_reg][i * 2] 
                             | (vreg[index_reg][i * 2 + 1] << 8);
                     break;
                 }
-                case 2: { // 32-bit
+                case 2: {  // 32-bit SEW
                     offset = vreg[index_reg][i * 4] 
                             | (vreg[index_reg][i * 4 + 1] << 8) 
                             | (vreg[index_reg][i * 4 + 2] << 16) 
@@ -291,6 +309,7 @@ void execute_vstore(uint32_t instr) {
                     break;
                 }
             }
+            // Store each field using calculated offset
             for (uint32_t s = 0; s < NFIELDS; s++) {
                 uint32_t addr = base + offset + s * eew;
                 for (uint32_t j = 0; j < eew; j++) {
