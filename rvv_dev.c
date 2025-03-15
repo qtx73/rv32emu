@@ -356,7 +356,7 @@ void execute_varith(uint32_t instr) {
                 for (uint32_t j = 0; j < eew; j++) {
                     op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
                 }
-                op2s = signed_extend(op2, 8 * (1 << eew));
+                op2s = signed_extend(op2, 8 * eew);
 
                 // Select operand 1 based on funct3
                 if (funct3 == 0x0) { // OPIVV : op1 from vector register vs1
@@ -364,13 +364,13 @@ void execute_varith(uint32_t instr) {
                     for (uint32_t j = 0; j < eew; j++) {
                         op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
                     }
-                    op1s = signed_extend(op1, 8 * (1 << eew));
+                    op1s = signed_extend(op1, 8 * eew);
                 } else if (funct3 == 0x3) { // OPIVI : op1 from immediate[4:0]
                     op1 = (instr >> 15) & 0x1F;
                     op1s = signed_extend(op1, 5);
                 } else if (funct3 == 0x4) { // OPIVX : op1 from x[rs1]
                     op1 = xreg[(instr >> 15) & 0x1F];
-                    op1s = signed_extend(op1, 8 * (1 << eew));
+                    op1s = signed_extend(op1, 8 * eew);
                 }
 
                 // Perform operation based on funct6
@@ -381,7 +381,7 @@ void execute_varith(uint32_t instr) {
                     case 0x02 : // sub
                         res = op2s - op1s; 
                         break;
-                    case 0x04 : // minu
+                    case 0x04 : // minuß
                         res = (op2 < op1) ? op2 : op1; 
                         break;
                     case 0x05 : // min
