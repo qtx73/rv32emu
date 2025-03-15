@@ -344,8 +344,8 @@ void execute_varith(uint32_t instr) {
                     uint8_t vs1 = (instr >> 15) & 0x1F;
                     for (uint32_t j = 0; j < eew; j++) {
                         op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
-                        op1s = signed_extend(op1, 8 * (1 << eew));
                     }
+                    op1s = signed_extend(op1, 8 * (1 << eew));
                 } else if (funct3 == 0x3) { // OPIVI : op1 from immediate[4:0]
                     op1 = (instr >> 15) & 0x1F;
                     op1s = signed_extend(op1, 5);
