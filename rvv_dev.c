@@ -13,6 +13,15 @@ uint8_t  vreg[32][VLEN/8]; // Vector Register file
 uint32_t vl;           // Vector Length
 uint32_t vtype;        // Vector Type Register
 
+// Build vector mask from v0 register
+void build_vmask(uint8_t vmask[VLEN]) {
+    for (uint32_t i = 0; i < vl; i++) {
+        int byte_index = i / 8;
+        int bit_index  = i % 8;
+        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
+    }
+}
+
 uint8_t compute_avl(uint8_t rs1, uint8_t rd) {
     if (rs1 != 0) {
         return xreg[rs1] & 0x1F;
@@ -102,11 +111,7 @@ void execute_vload(uint32_t instr) {
 
     // Build vector mask from v0
     uint8_t vmask[VLEN];
-    for (uint32_t i = 0; i < vl; i++) {
-        int byte_index = i / 8;
-        int bit_index  = i % 8;
-        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
-    }
+    build_vmask(vmask);
 
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
@@ -214,11 +219,7 @@ void execute_vstore(uint32_t instr) {
     uint32_t base = xreg[rs1];
 
     uint8_t vmask[VLEN];
-    for (uint32_t i = 0; i < vl; i++) {
-        int byte_index = i / 8;
-        int bit_index  = i % 8;
-        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
-    }
+    build_vmask(vmask);
 
     uint8_t NFIELDS = nf + 1;
     if (NFIELDS > 8) return;
@@ -318,11 +319,7 @@ void execute_varith(uint32_t instr) {
 
     // Build element-wise mask from v0
     uint8_t vmask[VLEN];
-    for (uint32_t i = 0; i < vl; i++) {
-        int byte_index = i / 8;
-        int bit_index  = i % 8;
-        vmask[i] = (vreg[0][byte_index] >> bit_index) & 0x1;
-    }
+    build_vmask(vmask);
 
     // Determine effective element width (in bytes)
     uint8_t vsew = (vtype >> 3) & 0x7;
