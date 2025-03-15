@@ -381,7 +381,7 @@ void execute_varith(uint32_t instr) {
                     case 0x02 : // sub
                         res = op2s - op1s; 
                         break;
-                    case 0x04 : // minuß
+                    case 0x04 : // minu
                         res = (op2 < op1) ? op2 : op1; 
                         break;
                     case 0x05 : // min
