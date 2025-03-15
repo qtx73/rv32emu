@@ -375,69 +375,69 @@ void execute_varith(uint32_t instr) {
 
                 // Perform operation based on funct6
                 switch (funct6) {
-                    case 0x00 : // add
+                    case 0x00 : // vadd
                         res = op2s + op1s; 
                         break;
-                    case 0x02 : // sub
+                    case 0x02 : // vsub
                         res = op2s - op1s; 
                         break;
                     case 0x03 : // vrsub
                         res = op1s - op2s; 
                         break;
-                    case 0x04 : // minu
+                    case 0x04 : // vminu
                         res = (op2 < op1) ? op2 : op1; 
                         break;
-                    case 0x05 : // min
+                    case 0x05 : // vmin
                         res = (op2s < op1s) ? op2s : op1s; 
                         break;
-                    case 0x06 : // maxu
+                    case 0x06 : // vmaxu
                         res = (op2 > op1) ? op2 : op1; 
                         break;
-                    case 0x07 : // max
+                    case 0x07 : // vmax
                         res = (op2s > op1s) ? op2s : op1s; 
                         break;
-                    case 0x09 : // and
+                    case 0x09 : // vand
                         res = op2 & op1; 
                         break;
-                    case 0x0A : // or
+                    case 0x0A : // vor
                         res = op2 | op1; 
                         break;
-                    case 0x0B : // xor
+                    case 0x0B : // vxor
                         res = op2 ^ op1; 
                         break;
-                    case 0x30 : // waddu
+                    case 0x30 : // vwaddu
                         res = op2 + op1; 
                         break;
-                    case 0x31 : // wadd
+                    case 0x31 : // vwadd
                         res = op2s + op1s; 
                         break;
-                    case 0x32 : // wsubu
+                    case 0x32 : // vwsubu
                         res = op2 - op1; 
                         break;
-                    case 0x33 : // wsub
+                    case 0x33 : // vwsub
                         res = op2s - op1s; 
                         break;
-                    case 0x34 : // waddu.w
+                    case 0x34 : // vwaddu.w
                         res = op2 + op1; 
                         break;
-                    case 0x35 : // wadd.w
+                    case 0x35 : // vwadd.w
                         res = op2s + op1s; 
                         break;
-                    case 0x36 : // wsubu.w
+                    case 0x36 : // vwsubu.w
                         res = op2 - op1; 
                         break;
-                    case 0x37 : // wsub.w
+                    case 0x37 : // vwsub.w
                         res = op2s - op1s; 
                         break;
-                    case 0x38 : // wmulu
-                        res = op2 * op1; 
-                        break;
-                    case 0x3A : // wmulsu
-                        res = op2s * op1;
-                        break;
-                    case 0x3B : // wmul
-                        res = op2s * op1s; 
-                        break;
+                    // case 0x38 : // vwmulu
+                    //     res = op2 * op1; 
+                    //     break;
+                    // case 0x3A : // wmulsu
+                    //     res = op2s * op1;
+                    //     break;
+                    // case 0x3B : // wmul
+                    //     res = op2s * op1s; 
+                    //     break;
                 }
 
                 // Write the result back to the destination vector register vd
