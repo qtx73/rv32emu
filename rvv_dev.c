@@ -405,6 +405,45 @@ void execute_varith(uint32_t instr) {
                     case 0x0B : // vxor
                         res = op2 ^ op1; 
                         break;
+                    case 0x10 : // vmseq
+                        res = (op2 == op1); 
+                        break;
+                    case 0x11 : // vmsne
+                        res = (op2 != op1); 
+                        break;
+                    case 0x12 : // vmsltu
+                        res = (op2 < op1); 
+                        break;
+                    case 0x13 : // vmslt
+                        res = (op2s < op1s); 
+                        break;
+                    case 0x14 : // vmsleu
+                        res = (op2 <= op1); 
+                        break;
+                    case 0x15 : // vmsle
+                        res = (op2s <= op1s); 
+                        break;
+                    case 0x16 : // vmsgtu
+                        res = (op2 > op1); 
+                        break;
+                    case 0x17 : // vmsgt
+                        res = (op2s > op1s); 
+                        break;
+                    case 0x25 : // vsll
+                        res = op2 << op1; 
+                        break;
+                    case 0x26 : // vsrl
+                        res = op2 >> op1; 
+                        break;
+                    case 0x27 : // vsra
+                        res = op2s >> op1; 
+                        break;
+                    case 0x2C : // vnsrl
+                        res = op2 >> op1; 
+                        break;
+                    case 0x2D : // vnsra
+                        res = op2s >> op1; 
+                        break;
                     case 0x30 : // vwaddu
                         res = op2 + op1; 
                         break;
@@ -429,15 +468,6 @@ void execute_varith(uint32_t instr) {
                     case 0x37 : // vwsub.w
                         res = op2s - op1s; 
                         break;
-                    // case 0x38 : // vwmulu
-                    //     res = op2 * op1; 
-                    //     break;
-                    // case 0x3A : // wmulsu
-                    //     res = op2s * op1;
-                    //     break;
-                    // case 0x3B : // wmul
-                    //     res = op2s * op1s; 
-                    //     break;
                 }
 
                 // Write the result back to the destination vector register vd
@@ -458,6 +488,8 @@ void execute_varith(uint32_t instr) {
                     } else {
                         write_back_eew = 1;
                     }
+                } else if (funct6 >> 3 == 0x3) { // masking operation
+                    write_back_eew = 1;
                 }
                 for (uint32_t j = 0; j < write_back_eew; j++) {
                     vreg[vd][i * write_back_eew + j] = (res >> (j * 8)) & 0xFF;
