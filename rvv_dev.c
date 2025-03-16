@@ -346,11 +346,248 @@ void execute_varith(uint32_t instr) {
     uint8_t eew = 1 << vsew;
 
     // Check if instruction is supported
-    // OPIVV(0x0), OPIVI(0x3), OPIVX(0x4), OPMVV(0x2), OPMVX(0x6)
-    if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4 || funct3 == 0x2 || funct3 == 0x6) { 
-        // Process each vector element
+    // OPIVV(0x0), OPIVI(0x3), OPIVX(0x4), OPMVV(0x2), OPMVX(0x6), OPFVV(0x1), OPMVX(0x5)
+    if (funct3 == 0x0 || funct3 == 0x1 || funct3 == 0x2 || funct3 == 0x3 || 
+        funct3 == 0x4 || funct3 == 0x5 || funct3 == 0x6 || funct3 == 0x7) { 
+        
+        // === Handle reduction operations (OPFVV format, funct3 = 0x1) ===
+        if (funct3 == 0x1 && (funct6 >= 0x00 && funct6 <= 0x07)) {
+            // Reduction operations: result goes to scalar vd[0]
+            uint8_t vs1 = (instr >> 15) & 0x1F;  // Source register 1
+            
+            uint32_t op1 = 0, acc = 0;
+            int32_t op1s = 0, accs = 0;
+            
+            // Initialize accumulator with vs1[0] (neutral element)
+            for (uint32_t j = 0; j < eew; j++) {
+                op1 |= (uint32_t)vreg[vs1][j] << (j * 8);
+            }
+            op1s = signed_extend(op1, 8 * eew);
+            
+            // Neutral element depends on operation
+            switch (funct6) {
+                case 0x00: // vredsum
+                    acc = 0;
+                    accs = 0;
+                    break;
+                case 0x01: // vredand
+                    acc = 0xFFFFFFFF;
+                    break;
+                case 0x02: // vredor
+                    acc = 0;
+                    break;
+                case 0x03: // vredxor
+                    acc = 0;
+                    break;
+                case 0x04: // vredminu
+                    acc = 0xFFFFFFFF; // Maximum unsigned value
+                    break;
+                case 0x05: // vredmin
+                    accs = 0x7FFFFFFF; // Maximum signed value
+                    acc = (uint32_t)accs;
+                    break;
+                case 0x06: // vredmaxu
+                    acc = 0; // Minimum unsigned value
+                    break;
+                case 0x07: // vredmax
+                    accs = 0x80000000; // Minimum signed value
+                    acc = (uint32_t)accs;
+                    break;
+            }
+            
+            // Process vector elements and accumulate result
+            for (uint32_t i = 0; i < vl; i++) {
+                if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
+                    uint32_t op2 = 0;
+                    int32_t op2s = 0;
+                    
+                    // Load operand from vs2
+                    for (uint32_t j = 0; j < eew; j++) {
+                        op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
+                    }
+                    op2s = signed_extend(op2, 8 * eew);
+                    
+                    // Perform reduction operation
+                    switch (funct6) {
+                        case 0x00: // vredsum
+                            accs += op2s;
+                            acc = (uint32_t)accs;
+                            break;
+                        case 0x01: // vredand
+                            acc &= op2;
+                            break;
+                        case 0x02: // vredor
+                            acc |= op2;
+                            break;
+                        case 0x03: // vredxor
+                            acc ^= op2;
+                            break;
+                        case 0x04: // vredminu
+                            acc = (op2 < acc) ? op2 : acc;
+                            break;
+                        case 0x05: // vredmin
+                            accs = (op2s < accs) ? op2s : accs;
+                            acc = (uint32_t)accs;
+                            break;
+                        case 0x06: // vredmaxu
+                            acc = (op2 > acc) ? op2 : acc;
+                            break;
+                        case 0x07: // vredmax
+                            accs = (op2s > accs) ? op2s : accs;
+                            acc = (uint32_t)accs;
+                            break;
+                    }
+                }
+            }
+            
+            // Write result to scalar vd[0]
+            for (uint32_t j = 0; j < eew; j++) {
+                vreg[vd][j] = (acc >> (j * 8)) & 0xFF;
+            }
+            
+            // Clear unused elements
+            for (uint32_t i = 1; i < vl; i++) {
+                for (uint32_t j = 0; j < eew; j++) {
+                    vreg[vd][i * eew + j] = 0;
+                }
+            }
+            
+            return; // Early return after handling reduction
+        }
+        
+        // === Handle mask operations (OPMVV format, funct3 = 0x2, special funct6) ===
+        else if (funct3 == 0x2 && (funct6 >= 0x50 && funct6 <= 0x57)) {
+            uint8_t vs1 = (instr >> 15) & 0x1F;  // Source register 1
+            
+            // For vpopc and vfirst, result goes to x[rd]
+            if (funct6 == 0x50 || funct6 == 0x51) {
+                uint32_t result = 0;
+                
+                switch (funct6) {
+                    case 0x50: // vpopc - Count number of set bits in vs2
+                        for (uint32_t i = 0; i < vl; i++) {
+                            if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
+                                uint8_t bit = (vreg[vs2][i / 8] >> (i % 8)) & 0x1;
+                                result += bit;
+                            }
+                        }
+                        break;
+                        
+                    case 0x51: // vfirst - Find first set bit in vs2
+                        result = 0xFFFFFFFF; // -1 if no set bit found
+                        for (uint32_t i = 0; i < vl; i++) {
+                            if ((vm == 1 || (vm == 0 && vmask[i] == 1)) && 
+                                ((vreg[vs2][i / 8] >> (i % 8)) & 0x1)) {
+                                result = i;
+                                break;
+                            }
+                        }
+                        break;
+                }
+                
+                // Store result in scalar register
+                xreg[vd] = result;
+                return; // Early return after handling
+            }
+            
+            // Mask logical operations
+            else if (funct6 >= 0x52 && funct6 <= 0x57) {
+                for (uint32_t i = 0; i < vl; i++) {
+                    if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
+                        // Extract source bits
+                        uint8_t vs2_bit = (vreg[vs2][i / 8] >> (i % 8)) & 0x1;
+                        uint8_t vs1_bit = (vreg[vs1][i / 8] >> (i % 8)) & 0x1;
+                        uint8_t result_bit = 0;
+                        
+                        // Perform mask operation
+                        switch (funct6) {
+                            case 0x52: // vmand
+                                result_bit = vs1_bit & vs2_bit;
+                                break;
+                            case 0x53: // vmor
+                                result_bit = vs1_bit | vs2_bit;
+                                break;
+                            case 0x54: // vmxor
+                                result_bit = vs1_bit ^ vs2_bit;
+                                break;
+                            case 0x55: // vmnand
+                                result_bit = ~(vs1_bit & vs2_bit) & 0x1;
+                                break;
+                            case 0x56: // vmnor
+                                result_bit = ~(vs1_bit | vs2_bit) & 0x1;
+                                break;
+                            case 0x57: // vmxnor
+                                result_bit = ~(vs1_bit ^ vs2_bit) & 0x1;
+                                break;
+                        }
+                        
+                        // Set/clear bit in destination
+                        if (result_bit) {
+                            vreg[vd][i / 8] |= (1 << (i % 8));
+                        } else {
+                            vreg[vd][i / 8] &= ~(1 << (i % 8));
+                        }
+                    }
+                }
+                return; // Early return after handling
+            }
+        }
+        
+        // === Handle mask.set and mask.clear (OPIVV, special funct6) ===
+        else if (funct3 == 0x0 && (funct6 == 0x58 || funct6 == 0x59)) {
+            for (uint32_t i = 0; i < vl; i++) {
+                if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
+                    // Set or clear bits
+                    if (funct6 == 0x58) { // vmclr.m - Clear all bits
+                        vreg[vd][i / 8] &= ~(1 << (i % 8));
+                    } else { // vmset.m - Set all bits
+                        vreg[vd][i / 8] |= (1 << (i % 8));
+                    }
+                }
+            }
+            return; // Early return after handling
+        }
+        
+        // === Handle vcompress (OPMVV, special funct6) ===
+        else if (funct3 == 0x2 && funct6 == 0x5F) {
+            uint8_t vs1 = (instr >> 15) & 0x1F;  // Source register 1
+            uint32_t dest_idx = 0;
+            
+            // Temporary buffer for compressed data
+            uint8_t tmp_reg[VLEN];
+            memset(tmp_reg, 0, VLEN); // Clear temp buffer
+            
+            // Compress vs1 into temporary buffer based on vs2 mask bits
+            for (uint32_t i = 0; i < vl; i++) {
+                uint8_t mask_bit = (vreg[vs2][i / 8] >> (i % 8)) & 0x1;
+                
+                if (mask_bit) {
+                    // Copy element from vs1 to temp buffer
+                    for (uint32_t j = 0; j < eew; j++) {
+                        tmp_reg[dest_idx * eew + j] = vreg[vs1][i * eew + j];
+                    }
+                    dest_idx++;
+                }
+            }
+            
+            // Copy from temp buffer to destination register
+            for (uint32_t i = 0; i < vl; i++) {
+                for (uint32_t j = 0; j < eew; j++) {
+                    if (i < dest_idx) {
+                        vreg[vd][i * eew + j] = tmp_reg[i * eew + j];
+                    } else {
+                        vreg[vd][i * eew + j] = 0; // Zero out remaining elements
+                    }
+                }
+            }
+            
+            return; // Early return after handling
+        }
+        
+        // === Process regular vector operations ===
+        uint8_t vd = (instr >> 7) & 0x1F; // Destination vector register vd
+
         for (uint32_t i = 0; i < vl; i++) {
-            // Check mask condition: if vm=1 execute unconditionally, if vm=0 follow mask value
             if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
                 // === Load operands ===
                 uint32_t op1 = 0, op2 = 0, res = 0;
