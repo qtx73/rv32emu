@@ -330,13 +330,14 @@ int32_t signed_extend(uint32_t val, uint8_t size) {
 }
 
 void execute_varith(uint32_t instr) {
-    // Extract fields
-    uint8_t funct6 = (instr >> 26) & 0x3F;
-    uint8_t funct3 = (instr >> 12) & 0x7;
-    uint8_t vm = (instr >> 25) & 0x1;
-    uint8_t vs2 = (instr >> 20) & 0x1F;
-
-    // Build element-wise mask from v0
+    // === Extract instruction fields ===
+    uint8_t funct6 = (instr >> 26) & 0x3F;  // Operation type
+    uint8_t funct3 = (instr >> 12) & 0x7;   // Instruction format
+    uint8_t vm     = (instr >> 25) & 0x1;   // Masking mode
+    uint8_t vs2    = (instr >> 20) & 0x1F;  // Source register 2
+    uint8_t vd     = (instr >> 7) & 0x1F;   // Destination register
+    
+    // Build mask information from v0 register
     uint8_t vmask[VLEN];
     build_vmask(vmask);
 
@@ -344,215 +345,179 @@ void execute_varith(uint32_t instr) {
     uint8_t vsew = (vtype >> 3) & 0x7;
     uint8_t eew = 1 << vsew;
 
+    // Check if instruction is supported
+    // OPIVV(0x0), OPIVI(0x3), OPIVX(0x4), OPMVV(0x2), OPMVX(0x6)
     if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4 || funct3 == 0x2 || funct3 == 0x6) { 
-        // OPIVV, OPIVI, OPIVX, OPMVV, OPMVX
-        uint8_t vd = (instr >> 7) & 0x1F; // Destination vector register vd
-
+        // Process each vector element
         for (uint32_t i = 0; i < vl; i++) {
+            // Check mask condition: if vm=1 execute unconditionally, if vm=0 follow mask value
             if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
+                // === Load operands ===
                 uint32_t op1 = 0, op2 = 0, res = 0;
                 int32_t op1s = 0, op2s = 0, ress = 0;
-
-                // Load operands 2 from vector register vs2
+                uint32_t vd_val = 0;
+                int32_t vd_vals = 0;
+                
+                // Load operand 2 from vs2 register
                 for (uint32_t j = 0; j < eew; j++) {
                     op2 |= (uint32_t)vreg[vs2][i * eew + j] << (j * 8);
                 }
                 op2s = signed_extend(op2, 8 * eew);
 
-                // Select operand 1 based on funct3
-                if (funct3 == 0x0 || funct3 == 0x2) { // OPIVV or OPMVV : op1 from vector register vs1
+                // Select operand 1 based on instruction format
+                if (funct3 == 0x0 || funct3 == 0x2) { 
+                    // OPIVV or OPMVV: Get operand 1 from vector register vs1
                     uint8_t vs1 = (instr >> 15) & 0x1F;
                     for (uint32_t j = 0; j < eew; j++) {
                         op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
                     }
                     op1s = signed_extend(op1, 8 * eew);
-                } else if (funct3 == 0x3) { // OPIVI : op1 from immediate[4:0]
+                } 
+                else if (funct3 == 0x3) { 
+                    // OPIVI: Get operand 1 from immediate value
                     op1 = (instr >> 15) & 0x1F;
                     op1s = signed_extend(op1, 5);
-                } else if (funct3 == 0x4 || funct3 == 0x6) { // OPIVX or OPMVX : op1 from x[rs1]
+                } 
+                else if (funct3 == 0x4 || funct3 == 0x6) { 
+                    // OPIVX or OPMVX: Get operand 1 from scalar register
                     op1 = xreg[(instr >> 15) & 0x1F];
                     op1s = signed_extend(op1, 8 * eew);
                 }
 
-                // Perform operation based on funct6
+                // Load current vd value for fused operations
+                if ((funct3 == 0x2 || funct3 == 0x6) && funct6 >= 0x20 && funct6 <= 0x23) {
+                    for (uint32_t j = 0; j < eew; j++) {
+                        vd_val |= (uint32_t)vreg[vd][i * eew + j] << (j * 8);
+                    }
+                    vd_vals = signed_extend(vd_val, 8 * eew);
+                }
+                
+                // === Execute operation based on instruction format and opcode ===
                 if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4) {
+                    // Integer vector instructions (OPIVV, OPIVI, OPIVX)
                     switch (funct6) {
-                        case 0x00 : // vadd
-                            res = op2s + op1s; 
-                            break;
-                        case 0x02 : // vsub
-                            res = op2s - op1s; 
-                            break;
-                        case 0x03 : // vrsub
-                            res = op1s - op2s; 
-                            break;
-                        case 0x04 : // vminu
-                            res = (op2 < op1) ? op2 : op1; 
-                            break;
-                        case 0x05 : // vmin
-                            res = (op2s < op1s) ? op2s : op1s; 
-                            break;
-                        case 0x06 : // vmaxu
-                            res = (op2 > op1) ? op2 : op1; 
-                            break;
-                        case 0x07 : // vmax
-                            res = (op2s > op1s) ? op2s : op1s; 
-                            break;
-                        case 0x09 : // vand
-                            res = op2 & op1; 
-                            break;
-                        case 0x0A : // vor
-                            res = op2 | op1; 
-                            break;
-                        case 0x0B : // vxor
-                            res = op2 ^ op1; 
-                            break;
-                        case 0x10 : // vmseq
-                            res = (op2 == op1); 
-                            break;
-                        case 0x11 : // vmsne
-                            res = (op2 != op1); 
-                            break;
-                        case 0x12 : // vmsltu
-                            res = (op2 < op1); 
-                            break;
-                        case 0x13 : // vmslt
-                            res = (op2s < op1s); 
-                            break;
-                        case 0x14 : // vmsleu
-                            res = (op2 <= op1); 
-                            break;
-                        case 0x15 : // vmsle
-                            res = (op2s <= op1s); 
-                            break;
-                        case 0x16 : // vmsgtu
-                            res = (op2 > op1); 
-                            break;
-                        case 0x17 : // vmsgt
-                            res = (op2s > op1s); 
-                            break;
-                        case 0x25 : // vsll
-                            res = op2 << op1; 
-                            break;
-                        case 0x26 : // vsrl
-                            res = op2 >> op1; 
-                            break;
-                        case 0x27 : // vsra
-                            res = op2s >> op1; 
-                            break;
-                        case 0x2C : // vnsrl
-                            res = op2 >> op1; 
-                            break;
-                        case 0x2D : // vnsra
-                            res = op2s >> op1; 
-                            break;
-                        case 0x30 : // vwaddu
-                            res = op2 + op1; 
-                            break;
-                        case 0x31 : // vwadd
-                            res = op2s + op1s; 
-                            break;
-                        case 0x32 : // vwsubu
-                            res = op2 - op1; 
-                            break;
-                        case 0x33 : // vwsub
-                            res = op2s - op1s; 
-                            break;
-                        case 0x34 : // vwaddu.w
-                            res = op2 + op1; 
-                            break;
-                        case 0x35 : // vwadd.w
-                            res = op2s + op1s; 
-                            break;
-                        case 0x36 : // vwsubu.w
-                            res = op2 - op1; 
-                            break;
-                        case 0x37 : // vwsub.w
-                            res = op2s - op1s; 
-                            break;
+                        // Arithmetic operations
+                        case 0x00: res = op2s + op1s; break;           // vadd
+                        case 0x02: res = op2s - op1s; break;           // vsub
+                        case 0x03: res = op1s - op2s; break;           // vrsub
+                        
+                        // Min/Max operations
+                        case 0x04: res = (op2 < op1) ? op2 : op1; break;   // vminu
+                        case 0x05: res = (op2s < op1s) ? op2s : op1s; break; // vmin
+                        case 0x06: res = (op2 > op1) ? op2 : op1; break;   // vmaxu
+                        case 0x07: res = (op2s > op1s) ? op2s : op1s; break; // vmax
+                        
+                        // Logical operations
+                        case 0x09: res = op2 & op1; break;             // vand
+                        case 0x0A: res = op2 | op1; break;             // vor
+                        case 0x0B: res = op2 ^ op1; break;             // vxor
+                        
+                        // Comparison operations
+                        case 0x10: res = (op2 == op1); break;          // vmseq
+                        case 0x11: res = (op2 != op1); break;          // vmsne
+                        case 0x12: res = (op2 < op1); break;           // vmsltu
+                        case 0x13: res = (op2s < op1s); break;         // vmslt
+                        case 0x14: res = (op2 <= op1); break;          // vmsleu
+                        case 0x15: res = (op2s <= op1s); break;        // vmsle
+                        case 0x16: res = (op2 > op1); break;           // vmsgtu
+                        case 0x17: res = (op2s > op1s); break;         // vmsgt
+                        
+                        // Shift operations
+                        case 0x25: res = op2 << op1; break;            // vsll
+                        case 0x26: res = op2 >> op1; break;            // vsrl
+                        case 0x27: res = op2s >> op1; break;           // vsra
+                        case 0x2C: res = op2 >> op1; break;            // vnsrl
+                        case 0x2D: res = op2s >> op1; break;           // vnsra
+                        
+                        // Widening operations
+                        case 0x30: res = op2 + op1; break;             // vwaddu
+                        case 0x31: res = op2s + op1s; break;           // vwadd
+                        case 0x32: res = op2 - op1; break;             // vwsubu
+                        case 0x33: res = op2s - op1s; break;           // vwsub
+                        case 0x34: res = op2 + op1; break;             // vwaddu.w
+                        case 0x35: res = op2s + op1s; break;           // vwadd.w
+                        case 0x36: res = op2 - op1; break;             // vwsubu.w
+                        case 0x37: res = op2s - op1s; break;           // vwsub.w
                     }
-                } else if (funct3 == 0x2 || funct3 == 0x6) { // OPMVV or OPMVX
-                    uint32_t vd_val = 0;
-                    int32_t vd_vals = 0;
-                    
-                    // 現在のvd値を読み込む (融合演算用)
-                    if (funct6 >= 0x20 && funct6 <= 0x23) { // 融合演算命令の場合のみ
-                        for (uint32_t j = 0; j < eew; j++) {
-                            vd_val |= (uint32_t)vreg[vd][i * eew + j] << (j * 8);
-                        }
-                        vd_vals = signed_extend(vd_val, 8 * eew);
-                    }
-                    
+                } 
+                else if (funct3 == 0x2 || funct3 == 0x6) {
+                    // Multiplication/Division vector instructions (OPMVV, OPMVX)
                     switch (funct6) {
-                        case 0x08 : // vmul
+                        // Multiplication operations
+                        case 0x08:
+                            // vmul: Standard multiplication
                             res = op2s * op1s;
                             break;
-                        case 0x09 : // vmulh (高位を取る)
-                            // 32ビット内で実装するため簡易的な計算方法を使用
-                            // 元のビット幅に応じて適切に処理
-                            if (eew == 1) { // 8ビット
+                            
+                        case 0x09:
+                            // vmulh: Signed multiplication (high bits)
+                            if (eew == 1) { // 8-bit
                                 ress = ((int16_t)op2s * (int16_t)op1s) >> 8;
-                                res = (uint32_t)ress;
-                            } else if (eew == 2) { // 16ビット
+                            } else if (eew == 2) { // 16-bit
                                 ress = ((int32_t)op2s * (int32_t)op1s) >> 16;
-                                res = (uint32_t)ress;
-                            } else { // 32ビット - 精度が落ちる可能性あり
-                                // 32ビットでの高位計算は簡易的に実装
-                                // 注: 64ビット演算が必要な場合は精度が落ちます
+                            } else { // 32-bit (approximate calculation)
                                 if ((op2s >> 16) == 0 && (op1s >> 16) == 0) {
-                                    res = 0; // 両方が小さい値なら高位は0
+                                    ress = 0; // If both values are small, high bits are 0
                                 } else {
                                     ress = ((op2s >> 16) * op1s + (op1s >> 16) * (op2s & 0xFFFF));
-                                    res = (uint32_t)ress;
                                 }
                             }
+                            res = (uint32_t)ress;
                             break;
-                        case 0x0A : // vmulhu (符号なし高位)
-                            if (eew == 1) { // 8ビット
+                            
+                        case 0x0A:
+                            // vmulhu: Unsigned multiplication (high bits)
+                            if (eew == 1) { // 8-bit
                                 res = ((uint16_t)op2 * (uint16_t)op1) >> 8;
-                            } else if (eew == 2) { // 16ビット
+                            } else if (eew == 2) { // 16-bit
                                 res = ((uint32_t)op2 * (uint32_t)op1) >> 16;
-                            } else { // 32ビット - 精度が落ちる可能性あり
+                            } else { // 32-bit (approximate calculation)
                                 if ((op2 >> 16) == 0 && (op1 >> 16) == 0) {
-                                    res = 0; // 両方が小さい値なら高位は0
+                                    res = 0; // If both values are small, high bits are 0
                                 } else {
                                     res = ((op2 >> 16) * op1 + (op1 >> 16) * (op2 & 0xFFFF));
                                 }
                             }
                             break;
-                        case 0x0B : // vmulhsu (片方符号あり高位)
-                            if (eew == 1) { // 8ビット
+                            
+                        case 0x0B:
+                            // vmulhsu: Signed×Unsigned multiplication (high bits)
+                            if (eew == 1) { // 8-bit
                                 ress = ((int16_t)op2s * (uint16_t)op1) >> 8;
-                                res = (uint32_t)ress;
-                            } else if (eew == 2) { // 16ビット
+                            } else if (eew == 2) { // 16-bit
                                 ress = ((int32_t)op2s * (uint32_t)op1) >> 16;
-                                res = (uint32_t)ress;
-                            } else { // 32ビット - 精度が落ちる可能性あり
+                            } else { // 32-bit (approximate calculation)
                                 if ((op2s >> 16) == 0 && (op1 >> 16) == 0) {
-                                    res = 0; // 両方が小さい値なら高位は0
+                                    ress = 0; // If both values are small, high bits are 0
                                 } else {
-                                    // 32ビットでの最適な実装は困難だが、簡略化
                                     ress = ((op2s >> 16) * op1 + (op1 >> 16) * (op2s & 0xFFFF));
-                                    res = (uint32_t)ress;
                                 }
                             }
+                            res = (uint32_t)ress;
                             break;
-                        case 0x0C : // vdiv (符号あり除算)
+                            
+                        // Division operations
+                        case 0x0C:
+                            // vdiv: Signed division
                             if (op1s == 0) {
-                                res = -1; // Division by zero: set all bits
+                                res = 0xFFFFFFFF; // Division by zero: set all bits to 1
                             } else {
                                 ress = op2s / op1s;
                                 res = (uint32_t)ress;
                             }
                             break;
-                        case 0x0D : // vdivu (符号なし除算)
+                            
+                        case 0x0D:
+                            // vdivu: Unsigned division
                             if (op1 == 0) {
-                                res = 0xFFFFFFFF; // Division by zero: set all bits
+                                res = 0xFFFFFFFF; // Division by zero: set all bits to 1
                             } else {
                                 res = op2 / op1;
                             }
                             break;
-                        case 0x0E : // vrem (符号あり剰余)
+                            
+                        case 0x0E:
+                            // vrem: Signed remainder
                             if (op1s == 0) {
                                 res = (uint32_t)op2s; // Division by zero: return dividend
                             } else {
@@ -560,53 +525,69 @@ void execute_varith(uint32_t instr) {
                                 res = (uint32_t)ress;
                             }
                             break;
-                        case 0x0F : // vremu (符号なし剰余)
+                            
+                        case 0x0F:
+                            // vremu: Unsigned remainder
                             if (op1 == 0) {
                                 res = op2; // Division by zero: return dividend
                             } else {
                                 res = op2 % op1;
                             }
                             break;
-                        case 0x20 : // vmacc (累積乗算)
-                            // vd = vd + (vs1 * vs2)
+                            
+                        // Fused multiply operations
+                        case 0x20:
+                            // vmacc: Multiply-accumulate (vd = vd + (vs1 * vs2))
                             res = vd_val + (op1s * op2s);
                             break;
-                        case 0x21 : // vnmsac (否定累積乗算)
-                            // vd = vd - (vs1 * vs2)
+                            
+                        case 0x21:
+                            // vnmsac: Negate multiply-accumulate (vd = vd - (vs1 * vs2))
                             res = vd_val - (op1s * op2s);
                             break;
-                        case 0x22 : // vmadd (累算乗算)
-                            // vd = (vd * vs1) + vs2
+                            
+                        case 0x22:
+                            // vmadd: Multiply-add (vd = (vd * vs1) + vs2)
                             res = (vd_vals * op1s) + op2s;
                             break;
-                        case 0x23 : // vnmsub (否定累算乗算)
-                            // vd = -(vd * vs1) + vs2
+                            
+                        case 0x23:
+                            // vnmsub: Negate multiply-subtract (vd = -(vd * vs1) + vs2)
                             res = -(vd_vals * op1s) + op2s;
                             break;
                     }
                 }
 
-                // Write the result back to the destination vector register vd
+                // === Write back results ===
+                // Determine write-back width based on operation
                 uint8_t write_back_eew = eew;
-                if (funct6 >> 4 == 0x3) { // widening operation
+                
+                // For widening operations
+                if (funct6 >> 4 == 0x3) {
                     if (eew == 1) {
-                        write_back_eew = 2;
+                        write_back_eew = 2;       // 8bit -> 16bit
                     } else if (eew == 2) {
-                        write_back_eew = 4;
+                        write_back_eew = 4;       // 16bit -> 32bit
                     } else {
-                        write_back_eew = 8;
+                        write_back_eew = 8;       // 32bit -> 64bit
                     }
-                } else if (funct6 >> 2 == 0xB) { // narrowing operation
+                } 
+                // For narrowing operations
+                else if (funct6 >> 2 == 0xB) {
                     if (eew == 8) {
-                        write_back_eew = 4;
+                        write_back_eew = 4;       // 64bit -> 32bit
                     } else if (eew == 4) {
-                        write_back_eew = 2;
+                        write_back_eew = 2;       // 32bit -> 16bit
                     } else {
-                        write_back_eew = 1;
+                        write_back_eew = 1;       // 16bit -> 8bit
                     }
-                } else if (funct6 >> 3 == 0x3) { // masking operation
-                    write_back_eew = 1;
+                } 
+                // For mask operations
+                else if (funct6 >> 3 == 0x3) {
+                    write_back_eew = 1;           // Always 1-bit (mask value)
                 }
+                
+                // Write result back to vector register
                 for (uint32_t j = 0; j < write_back_eew; j++) {
                     vreg[vd][i * write_back_eew + j] = (res >> (j * 8)) & 0xFF;
                 }
