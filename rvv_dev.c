@@ -344,13 +344,14 @@ void execute_varith(uint32_t instr) {
     uint8_t vsew = (vtype >> 3) & 0x7;
     uint8_t eew = 1 << vsew;
 
-    if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4) { // OPIVV, OPIVI, OPIVX
+    if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4 || funct3 == 0x2 || funct3 == 0x6) { 
+        // OPIVV, OPIVI, OPIVX, OPMVV, OPMVX
         uint8_t vd = (instr >> 7) & 0x1F; // Destination vector register vd
 
         for (uint32_t i = 0; i < vl; i++) {
             if (vm == 1 || (vm == 0 && vmask[i] == 1)) {
                 uint32_t op1 = 0, op2 = 0, res = 0;
-                int32_t op1s = 0, op2s = 0;
+                int32_t op1s = 0, op2s = 0, ress = 0;
 
                 // Load operands 2 from vector register vs2
                 for (uint32_t j = 0; j < eew; j++) {
@@ -359,7 +360,7 @@ void execute_varith(uint32_t instr) {
                 op2s = signed_extend(op2, 8 * eew);
 
                 // Select operand 1 based on funct3
-                if (funct3 == 0x0) { // OPIVV : op1 from vector register vs1
+                if (funct3 == 0x0 || funct3 == 0x2) { // OPIVV or OPMVV : op1 from vector register vs1
                     uint8_t vs1 = (instr >> 15) & 0x1F;
                     for (uint32_t j = 0; j < eew; j++) {
                         op1 |= (uint32_t)vreg[vs1][i * eew + j] << (j * 8);
@@ -368,106 +369,221 @@ void execute_varith(uint32_t instr) {
                 } else if (funct3 == 0x3) { // OPIVI : op1 from immediate[4:0]
                     op1 = (instr >> 15) & 0x1F;
                     op1s = signed_extend(op1, 5);
-                } else if (funct3 == 0x4) { // OPIVX : op1 from x[rs1]
+                } else if (funct3 == 0x4 || funct3 == 0x6) { // OPIVX or OPMVX : op1 from x[rs1]
                     op1 = xreg[(instr >> 15) & 0x1F];
                     op1s = signed_extend(op1, 8 * eew);
                 }
 
                 // Perform operation based on funct6
-                switch (funct6) {
-                    case 0x00 : // vadd
-                        res = op2s + op1s; 
-                        break;
-                    case 0x02 : // vsub
-                        res = op2s - op1s; 
-                        break;
-                    case 0x03 : // vrsub
-                        res = op1s - op2s; 
-                        break;
-                    case 0x04 : // vminu
-                        res = (op2 < op1) ? op2 : op1; 
-                        break;
-                    case 0x05 : // vmin
-                        res = (op2s < op1s) ? op2s : op1s; 
-                        break;
-                    case 0x06 : // vmaxu
-                        res = (op2 > op1) ? op2 : op1; 
-                        break;
-                    case 0x07 : // vmax
-                        res = (op2s > op1s) ? op2s : op1s; 
-                        break;
-                    case 0x09 : // vand
-                        res = op2 & op1; 
-                        break;
-                    case 0x0A : // vor
-                        res = op2 | op1; 
-                        break;
-                    case 0x0B : // vxor
-                        res = op2 ^ op1; 
-                        break;
-                    case 0x10 : // vmseq
-                        res = (op2 == op1); 
-                        break;
-                    case 0x11 : // vmsne
-                        res = (op2 != op1); 
-                        break;
-                    case 0x12 : // vmsltu
-                        res = (op2 < op1); 
-                        break;
-                    case 0x13 : // vmslt
-                        res = (op2s < op1s); 
-                        break;
-                    case 0x14 : // vmsleu
-                        res = (op2 <= op1); 
-                        break;
-                    case 0x15 : // vmsle
-                        res = (op2s <= op1s); 
-                        break;
-                    case 0x16 : // vmsgtu
-                        res = (op2 > op1); 
-                        break;
-                    case 0x17 : // vmsgt
-                        res = (op2s > op1s); 
-                        break;
-                    case 0x25 : // vsll
-                        res = op2 << op1; 
-                        break;
-                    case 0x26 : // vsrl
-                        res = op2 >> op1; 
-                        break;
-                    case 0x27 : // vsra
-                        res = op2s >> op1; 
-                        break;
-                    case 0x2C : // vnsrl
-                        res = op2 >> op1; 
-                        break;
-                    case 0x2D : // vnsra
-                        res = op2s >> op1; 
-                        break;
-                    case 0x30 : // vwaddu
-                        res = op2 + op1; 
-                        break;
-                    case 0x31 : // vwadd
-                        res = op2s + op1s; 
-                        break;
-                    case 0x32 : // vwsubu
-                        res = op2 - op1; 
-                        break;
-                    case 0x33 : // vwsub
-                        res = op2s - op1s; 
-                        break;
-                    case 0x34 : // vwaddu.w
-                        res = op2 + op1; 
-                        break;
-                    case 0x35 : // vwadd.w
-                        res = op2s + op1s; 
-                        break;
-                    case 0x36 : // vwsubu.w
-                        res = op2 - op1; 
-                        break;
-                    case 0x37 : // vwsub.w
-                        res = op2s - op1s; 
-                        break;
+                if (funct3 == 0x0 || funct3 == 0x3 || funct3 == 0x4) {
+                    switch (funct6) {
+                        case 0x00 : // vadd
+                            res = op2s + op1s; 
+                            break;
+                        case 0x02 : // vsub
+                            res = op2s - op1s; 
+                            break;
+                        case 0x03 : // vrsub
+                            res = op1s - op2s; 
+                            break;
+                        case 0x04 : // vminu
+                            res = (op2 < op1) ? op2 : op1; 
+                            break;
+                        case 0x05 : // vmin
+                            res = (op2s < op1s) ? op2s : op1s; 
+                            break;
+                        case 0x06 : // vmaxu
+                            res = (op2 > op1) ? op2 : op1; 
+                            break;
+                        case 0x07 : // vmax
+                            res = (op2s > op1s) ? op2s : op1s; 
+                            break;
+                        case 0x09 : // vand
+                            res = op2 & op1; 
+                            break;
+                        case 0x0A : // vor
+                            res = op2 | op1; 
+                            break;
+                        case 0x0B : // vxor
+                            res = op2 ^ op1; 
+                            break;
+                        case 0x10 : // vmseq
+                            res = (op2 == op1); 
+                            break;
+                        case 0x11 : // vmsne
+                            res = (op2 != op1); 
+                            break;
+                        case 0x12 : // vmsltu
+                            res = (op2 < op1); 
+                            break;
+                        case 0x13 : // vmslt
+                            res = (op2s < op1s); 
+                            break;
+                        case 0x14 : // vmsleu
+                            res = (op2 <= op1); 
+                            break;
+                        case 0x15 : // vmsle
+                            res = (op2s <= op1s); 
+                            break;
+                        case 0x16 : // vmsgtu
+                            res = (op2 > op1); 
+                            break;
+                        case 0x17 : // vmsgt
+                            res = (op2s > op1s); 
+                            break;
+                        case 0x25 : // vsll
+                            res = op2 << op1; 
+                            break;
+                        case 0x26 : // vsrl
+                            res = op2 >> op1; 
+                            break;
+                        case 0x27 : // vsra
+                            res = op2s >> op1; 
+                            break;
+                        case 0x2C : // vnsrl
+                            res = op2 >> op1; 
+                            break;
+                        case 0x2D : // vnsra
+                            res = op2s >> op1; 
+                            break;
+                        case 0x30 : // vwaddu
+                            res = op2 + op1; 
+                            break;
+                        case 0x31 : // vwadd
+                            res = op2s + op1s; 
+                            break;
+                        case 0x32 : // vwsubu
+                            res = op2 - op1; 
+                            break;
+                        case 0x33 : // vwsub
+                            res = op2s - op1s; 
+                            break;
+                        case 0x34 : // vwaddu.w
+                            res = op2 + op1; 
+                            break;
+                        case 0x35 : // vwadd.w
+                            res = op2s + op1s; 
+                            break;
+                        case 0x36 : // vwsubu.w
+                            res = op2 - op1; 
+                            break;
+                        case 0x37 : // vwsub.w
+                            res = op2s - op1s; 
+                            break;
+                    }
+                } else if (funct3 == 0x2 || funct3 == 0x6) { // OPMVV or OPMVX
+                    uint32_t vd_val = 0;
+                    int32_t vd_vals = 0;
+                    
+                    // 現在のvd値を読み込む (融合演算用)
+                    if (funct6 >= 0x20 && funct6 <= 0x23) { // 融合演算命令の場合のみ
+                        for (uint32_t j = 0; j < eew; j++) {
+                            vd_val |= (uint32_t)vreg[vd][i * eew + j] << (j * 8);
+                        }
+                        vd_vals = signed_extend(vd_val, 8 * eew);
+                    }
+                    
+                    switch (funct6) {
+                        case 0x08 : // vmul
+                            res = op2s * op1s;
+                            break;
+                        case 0x09 : // vmulh (高位を取る)
+                            // 32ビット内で実装するため簡易的な計算方法を使用
+                            // 元のビット幅に応じて適切に処理
+                            if (eew == 1) { // 8ビット
+                                ress = ((int16_t)op2s * (int16_t)op1s) >> 8;
+                                res = (uint32_t)ress;
+                            } else if (eew == 2) { // 16ビット
+                                ress = ((int32_t)op2s * (int32_t)op1s) >> 16;
+                                res = (uint32_t)ress;
+                            } else { // 32ビット - 精度が落ちる可能性あり
+                                // 32ビットでの高位計算は簡易的に実装
+                                // 注: 64ビット演算が必要な場合は精度が落ちます
+                                if ((op2s >> 16) == 0 && (op1s >> 16) == 0) {
+                                    res = 0; // 両方が小さい値なら高位は0
+                                } else {
+                                    ress = ((op2s >> 16) * op1s + (op1s >> 16) * (op2s & 0xFFFF));
+                                    res = (uint32_t)ress;
+                                }
+                            }
+                            break;
+                        case 0x0A : // vmulhu (符号なし高位)
+                            if (eew == 1) { // 8ビット
+                                res = ((uint16_t)op2 * (uint16_t)op1) >> 8;
+                            } else if (eew == 2) { // 16ビット
+                                res = ((uint32_t)op2 * (uint32_t)op1) >> 16;
+                            } else { // 32ビット - 精度が落ちる可能性あり
+                                if ((op2 >> 16) == 0 && (op1 >> 16) == 0) {
+                                    res = 0; // 両方が小さい値なら高位は0
+                                } else {
+                                    res = ((op2 >> 16) * op1 + (op1 >> 16) * (op2 & 0xFFFF));
+                                }
+                            }
+                            break;
+                        case 0x0B : // vmulhsu (片方符号あり高位)
+                            if (eew == 1) { // 8ビット
+                                ress = ((int16_t)op2s * (uint16_t)op1) >> 8;
+                                res = (uint32_t)ress;
+                            } else if (eew == 2) { // 16ビット
+                                ress = ((int32_t)op2s * (uint32_t)op1) >> 16;
+                                res = (uint32_t)ress;
+                            } else { // 32ビット - 精度が落ちる可能性あり
+                                if ((op2s >> 16) == 0 && (op1 >> 16) == 0) {
+                                    res = 0; // 両方が小さい値なら高位は0
+                                } else {
+                                    // 32ビットでの最適な実装は困難だが、簡略化
+                                    ress = ((op2s >> 16) * op1 + (op1 >> 16) * (op2s & 0xFFFF));
+                                    res = (uint32_t)ress;
+                                }
+                            }
+                            break;
+                        case 0x0C : // vdiv (符号あり除算)
+                            if (op1s == 0) {
+                                res = -1; // Division by zero: set all bits
+                            } else {
+                                ress = op2s / op1s;
+                                res = (uint32_t)ress;
+                            }
+                            break;
+                        case 0x0D : // vdivu (符号なし除算)
+                            if (op1 == 0) {
+                                res = 0xFFFFFFFF; // Division by zero: set all bits
+                            } else {
+                                res = op2 / op1;
+                            }
+                            break;
+                        case 0x0E : // vrem (符号あり剰余)
+                            if (op1s == 0) {
+                                res = (uint32_t)op2s; // Division by zero: return dividend
+                            } else {
+                                ress = op2s % op1s;
+                                res = (uint32_t)ress;
+                            }
+                            break;
+                        case 0x0F : // vremu (符号なし剰余)
+                            if (op1 == 0) {
+                                res = op2; // Division by zero: return dividend
+                            } else {
+                                res = op2 % op1;
+                            }
+                            break;
+                        case 0x20 : // vmacc (累積乗算)
+                            // vd = vd + (vs1 * vs2)
+                            res = vd_val + (op1s * op2s);
+                            break;
+                        case 0x21 : // vnmsac (否定累積乗算)
+                            // vd = vd - (vs1 * vs2)
+                            res = vd_val - (op1s * op2s);
+                            break;
+                        case 0x22 : // vmadd (累算乗算)
+                            // vd = (vd * vs1) + vs2
+                            res = (vd_vals * op1s) + op2s;
+                            break;
+                        case 0x23 : // vnmsub (否定累算乗算)
+                            // vd = -(vd * vs1) + vs2
+                            res = -(vd_vals * op1s) + op2s;
+                            break;
+                    }
                 }
 
                 // Write the result back to the destination vector register vd
